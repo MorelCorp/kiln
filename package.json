@@ -7,16 +7,30 @@
   },
   "scripts": {
     "kiln": "tsx src/cli.ts",
-    "typecheck": "tsc --noEmit",
+    "start": "tsx src/cli.ts daemon",
+    "dev:web": "vite --config web/vite.config.ts",
+    "build:web": "vite build --config web/vite.config.ts",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p web",
+    "test": "tsx --test test/*.test.ts",
     "check:private": "bash scripts/check-private.sh"
   },
   "dependencies": {
-    "@ai-hero/sandcastle": "^0.14.0"
+    "@ai-hero/sandcastle": "^0.14.0",
+    "yaml": "^2.9.1"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.3.5",
     "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "tailwindcss": "^4.3.5",
     "tsx": "^4.23.15",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "version": "0.1.0"
 }

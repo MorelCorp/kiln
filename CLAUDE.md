@@ -16,7 +16,9 @@ excerpts of real issues. Use neutral examples (`acme/webapp`, `/home/you/src/web
   `config.json` (projects, pace, providers), `.env` (tokens), `private-terms.txt`
   (words the pre-commit hook blocks), `notes/` (project-specific design notes).
   Kiln never writes into its own checkout at runtime; state goes to `~/.local/state/kiln/`.
-- **Per-project files live in that project's repo** (`<project>/.kiln/`), not here.
+- **Per-project files live in that project's repo** (`<project>/.kiln/`), not here. The one
+  exception is Kiln's own `.kiln/`: Kiln is always one of its own projects (so it can improve itself),
+  and those files must stay generic like the rest of the repo.
 - **Pre-commit hook is mandatory:** `git config core.hooksPath .githooks` (run once per clone).
   It runs gitleaks and the private-terms check on staged changes. Never bypass it with `--no-verify`.
 - Before any push, run `npm run check:private -- --all` (scans every tracked file).
@@ -38,7 +40,29 @@ excerpts of real issues. Use neutral examples (`acme/webapp`, `/home/you/src/web
 . ~/.nvm/nvm.sh
 npm install
 git config core.hooksPath .githooks
-npm run typecheck
+npm run typecheck                      # backend + web
+npm test                               # unit tests (protocol, stream parser, path rules, board)
+npm run build:web                      # build the command center into web/dist (served by the daemon)
+npm start                              # daemon + loop + UI on 127.0.0.1 (port from config)
+npm run kiln -- run <project> <issue>  # one task by hand, foreground
 npm run kiln -- tasks [project-id]     # show a project's task board (uses $KILN_HOME/config.json)
 npm run check:private -- --all         # privacy + secret scan of all tracked files
 ```
+
+Run Kiln for real from a separate deploy clone, not from this checkout:
+`scripts/install-service.sh` in that clone installs a systemd user service; Kiln's Environments page
+(project "kiln") updates and restarts it with `scripts/deploy-self.sh`.
+
+To test without real projects, point `KILN_HOME` and `KILN_STATE` at scratch dirs with a
+`"source": "local"` project on a throwaway git repo (`npm run kiln -- local add ...` creates issues).
+Never test against a real project's GitHub without asking.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues on `MorelCorp/kiln`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Domain docs
+
+Single-context: `GLOSSARY.md` + `docs/adr/` at the repo root (created lazily). See `docs/agents/domain.md`.

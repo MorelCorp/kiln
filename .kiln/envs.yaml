@@ -1,0 +1,9 @@
+# The running Kiln is this project's "prod". Meaningful when Kiln runs from a deploy clone
+# (scripts/install-service.sh); the probe then shows the commit it runs.
+envs:
+  - id: prod
+    name: Running Kiln
+    probe: git rev-parse --short HEAD
+    candidate: git rev-parse --short origin/main
+    deploy: scripts/deploy-self.sh
+    deployLabel: Update and restart Kiln
