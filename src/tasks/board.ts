@@ -42,3 +42,12 @@ export async function fetchBoard(p: ProjectConfig, source: Source): Promise<Task
   const issues = await source.listIssues();
   return issues.map((i) => classify(i, p)).sort((a, b) => a.priority - b.priority || a.number - b.number);
 }
+
+/**
+ * Labels to remove when a task enters `phase`. Terminal phases drop the running label; a merged
+ * task also drops the ready label, because GitHub closes its issue and it must not keep looking
+ * ready in label filters.
+ */
+export function labelsToClearOnPhase(phase: string, p: ProjectConfig): string[] {
+  return phase === "merged" ? [p.labels.ready, p.labels.running] : [p.labels.running];
+}
