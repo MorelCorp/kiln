@@ -296,14 +296,16 @@ function connect() {
       for (const l of listeners) l(ev);
     });
   }
-  let opened = false;
-  es.onopen = () => {
-    setConn(true);
-    // A reopen means the daemon restarted (e.g. a self-update) or the link dropped: events were
-    // missed, so every view refetches.
-    if (opened) for (const l of listeners) l({ type: "reconnect", data: null });
-    opened = true;
-  };
+  // The daemon greets each stream with its boot id. A new id means it restarted (e.g. "Update and
+  // restart Kiln"): reload the page, so it runs the new command center on fresh state.
+  let boot: string | null = null;
+  es.addEventListener("hello", (m) => {
+    const id = (JSON.parse((m as MessageEvent).data) as { boot?: string }).boot ?? null;
+    if (boot && id && id !== boot) return void window.location.reload();
+    if (boot) for (const l of listeners) l({ type: "reconnect", data: null }); // same daemon, link dropped: events were missed
+    boot = id;
+  });
+  es.onopen = () => setConn(true);
   es.onerror = () => setConn(false);
 }
 
