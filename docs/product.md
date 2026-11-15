@@ -105,16 +105,19 @@ next to Kiln's own share; daily/weekly trend by model; live tokens-per-minute wh
 
 ## Chat
 
-Asks about the project and factory state, and **proposes actions** (create issue, relabel, change pace,
-message an agent, stop a run) as buttons you confirm. It never merges or deploys.
+Asks about the project and factory state, and **proposes actions** (create issue, relabel, close an issue
+with a comment, change pace, message an agent, stop a run) as buttons you confirm. It never merges or deploys.
 
 ## UI
 
 - React + Vite + Tailwind. Home screen per project is a **pipeline board**:
   Triage → Ready → Running → Needs you → Merged → On staging → On prod, with "Needs you" highlighted.
   Side rail: pace, tokens, environment versions, chat.
-- Clicking a board card opens a read-only detail modal over the board (issue body, comments, Kiln's state,
+- Clicking a board card opens a detail modal over the board (issue body, comments, Kiln's state,
   log and PR link); Escape or × closes it and the board keeps its scroll. A GitHub icon in the top right of
   each card and of the modal opens the issue in a new tab. "Needs you" cards still go to their action page.
+  An open issue has a **Close issue** button under its description: a box for an optional closing comment
+  (posted on the issue) and GitHub's reason (completed / not planned). Closing stops a running agent and
+  drops the task.
 - Localhost only for now, but responsive and with room for auth so phone access (Tailscale) can come later.
 - The UI is validated as a wireframe artifact before it is coded.

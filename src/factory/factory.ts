@@ -12,7 +12,7 @@ import { clampEffort, clampTier, TIER_ORDER, type Effort, type ModelProvider, ty
 import {
   Ledger, type ChecklistItem, type Phase, type RunKind, type RunRow, type TaskRow, type UsageSnapshot,
 } from "../state/db.ts";
-import { git, sourceFor, type IssueDetail, type PullRequest, type Source } from "../tasks/source.ts";
+import { git, sourceFor, type CloseReason, type IssueDetail, type PullRequest, type Source } from "../tasks/source.ts";
 import { classify, labelsToClearOnPhase, type Task } from "../tasks/board.ts";
 import {
   StreamParser, extractJsonTag, extractTag, type ProgressItem, type RateLimitInfo, type RunEvent, type Usage,
@@ -839,6 +839,23 @@ export class Factory {
     if (live) this.abort(live, "stop");
     await this.source(p).editLabels(number, [], [p.labels.ready, p.labels.running]).catch(() => undefined);
     if (t) this.setPhase(t, "dropped", { note: "Dropped by you." });
+  }
+
+  /**
+   * You closed the issue from Kiln (its page or a confirmed chat action): stop its run, post your
+   * comment, close it on GitHub, and settle an unsettled task as dropped so the loop leaves it alone.
+   */
+  async closeIssue(projectId: string, number: number, comment?: string, reason: CloseReason = "completed") {
+    const p = this.project(projectId);
+    this.abortCiWait(projectId, number);
+    const live = this.liveFor(projectId, number);
+    if (live) this.abort(live, "stop");
+    await this.source(p).closeIssue(number, comment?.trim() || undefined, reason);
+    await this.source(p).editLabels(number, [], [p.labels.ready, p.labels.running]).catch(() => undefined);
+    const t = this.ledger.getTask(projectId, number);
+    if (t && !SETTLED.includes(t.phase)) this.setPhase(t, "dropped", { note: `Issue closed from Kiln (${reason}).` });
+    await this.syncBoard(projectId, true);
+    this.toast(`#${number} closed`, "info", projectId);
   }
 
   /**

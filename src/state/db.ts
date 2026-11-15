@@ -393,7 +393,7 @@ export class Ledger {
 export interface ChatAction {
   id: string;
   label: string;
-  kind: "create_issue" | "relabel" | "pace" | "message_agent" | "stop_run" | "open";
+  kind: "create_issue" | "relabel" | "close_issue" | "pace" | "message_agent" | "stop_run" | "open";
   args: Record<string, unknown>;
   status?: "done" | "failed" | "dismissed";
 }

@@ -42,10 +42,11 @@ function setup(prChecks: () => Promise<PrChecks>, opts: { findPr?: () => Promise
   const f = new Factory();
   f.ciTiming = { pollMs: 5, graceMs: 0 };
   const merged: string[] = [];
+  const closed: unknown[][] = [];
   const fake = {
     fetch: async () => {}, baseRef: () => "main", findPr: opts.findPr ?? (async () => pr), pushBranch: async () => {},
     getIssue: async () => ({ number: 1, title: "t", url: "u", state: "OPEN", closedAt: null, labels: [], body: "", comments: [] }),
-    editLabels: async () => {}, listIssues: async () => [], editPrBody: async () => {}, closeIssue: async () => {},
+    editLabels: async () => {}, listIssues: async () => [], editPrBody: async () => {}, closeIssue: async (...a: unknown[]) => { closed.push(a); },
     prChecks, mergePr: async () => (merged.push("x"), "deadbeefcafe"), commitEmail: async () => opts.commitEmail ?? null,
   } as unknown as Source;
   (f as unknown as { source: () => Source }).source = () => fake;
@@ -55,7 +56,7 @@ function setup(prChecks: () => Promise<PrChecks>, opts: { findPr?: () => Promise
     worktree: null, sessionId: null, prNumber: 5, prUrl: pr.url, plan: null, question: null, checklist: null, gate: null,
     overrideModel: null, overrideEffort: null, allowExtra: false, sendBacks: 0, queuedMessage: null, note: null, mergedSha: null, mergedAt: null,
   });
-  return { f, merged, task: () => f.ledger.getTask("webapp", number)! };
+  return { f, merged, closed, task: () => f.ledger.getTask("webapp", number)! };
 }
 
 const until = async (cond: () => boolean) => {
@@ -149,6 +150,43 @@ test("board sync ignores another PR on the same branch", async () => {
   const { f, task } = setup(noChecks, { findPr: async () => ({ ...mergedOnGitHub, number: 4 }), phase: "gate_failed" });
   await f.reconcile(f.project("webapp"));
   assert.equal(task().phase, "gate_failed");
+});
+
+test("closeIssue closes with the comment and reason, and drops a task in progress", async () => {
+  const { f, closed, task } = setup(noChecks, { phase: "pr_review" });
+  await f.closeIssue("webapp", 1, "  Shipped in 1.2  ", "completed");
+  assert.deepEqual(closed, [[1, "Shipped in 1.2", "completed"]]);
+  assert.equal(task().phase, "dropped");
+});
+
+test("closeIssue leaves a settled task's phase alone and sends no empty comment", async () => {
+  const { f, closed, task } = setup(noChecks, { phase: "merged" });
+  await f.closeIssue("webapp", 1, "   ", "not planned");
+  assert.deepEqual(closed, [[1, undefined, "not planned"]]);
+  assert.equal(task().phase, "merged");
+});
+
+test("chat close_issue action closes through the factory; a bad number fails the action", async () => {
+  const { runChatAction } = await import("../src/factory/assist.ts");
+  const { f, closed, task } = setup(noChecks, { phase: "question" });
+  const at = new Date().toISOString();
+  f.ledger.putChat("webapp", {
+    sessionId: null,
+    messages: [{
+      role: "assistant", text: "", at, actions: [
+        { id: "ok", label: "Close #1", kind: "close_issue", args: { number: 1, comment: "Done already", reason: "completed" } },
+        { id: "bad", label: "Close ?", kind: "close_issue", args: { number: "x" } },
+      ],
+    }],
+  });
+  const p = f.project("webapp");
+  const s1 = await runChatAction(f, p, "ok");
+  assert.equal(s1.messages[0].actions![0].status, "done");
+  assert.deepEqual(closed, [[1, "Done already", "completed"]]);
+  assert.equal(task().phase, "dropped");
+  const s2 = await runChatAction(f, p, "bad");
+  assert.equal(s2.messages[0].actions![1].status, "failed");
+  assert.equal(closed.length, 1);
 });
 
 // Last: it rewrites kiln/issue-1, which the tests above match by its original sha.

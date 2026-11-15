@@ -6,7 +6,7 @@ import { KILN_ROOT, loadRules } from "../config.ts";
 import type { BusEvent, Factory } from "../factory/factory.ts";
 import { probeEnvs, deploy, cachedEnvs } from "../factory/envs.ts";
 import { worktreePath } from "../factory/gate.ts";
-import { git } from "../tasks/source.ts";
+import { git, type CloseReason } from "../tasks/source.ts";
 import * as assist from "../factory/assist.ts";
 import { boardView, inboxView, runSummary, tokensView, tierName } from "./views.ts";
 import type { RunEvent } from "../runs/stream.ts";
@@ -161,6 +161,8 @@ route("GET", "/api/p/:pid/tasks/:n/diff", async ({ f, params }) => {
   }
 });
 
+const closeReason = (r: unknown): CloseReason => (r === "not planned" ? "not planned" : "completed");
+
 const act = (path: string, fn: (f: Factory, pid: string, n: number, body: any) => Promise<unknown> | unknown) => // eslint-disable-line @typescript-eslint/no-explicit-any
   route("POST", `/api/p/:pid/tasks/:n/${path}`, async ({ f, params, body }) => {
     const p = f.project(params.pid);
@@ -172,6 +174,7 @@ act("stop", (f, pid, n) => f.stop(pid, n));
 act("redirect", (f, pid, n, b) => f.redirect(pid, n, String(b.message ?? ""), !!b.queue));
 act("override", (f, pid, n, b) => f.override(pid, n, { model: b.model ?? null, effort: b.effort ?? null, allowExtra: b.allowExtra }, b.applyNow !== false));
 act("answer", (f, pid, n, b) => f.answer(pid, n, String(b.text ?? "")));
+act("close", (f, pid, n, b) => f.closeIssue(pid, n, String(b.comment ?? ""), closeReason(b.reason)));
 act("approve-plan", (f, pid, n, b) => f.approvePlan(pid, n, b.note));
 act("revise-plan", (f, pid, n, b) => f.revisePlan(pid, n, String(b.note ?? "")));
 act("retry", (f, pid, n, b) => f.retry(pid, n, b.note));
