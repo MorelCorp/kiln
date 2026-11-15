@@ -47,10 +47,16 @@ function Column({ col, cards }: { col: (typeof COLS)[number]; cards: Card[] }) {
   const [all, setAll] = useState(false);
   const limit = col.id === "prod" ? 8 : Infinity;
   const shown = all ? cards : cards.slice(0, limit);
+  // Ready also lists cards handed to a human: count only what an agent can start.
+  const human = col.id === "ready" ? cards.filter((c) => c.human).length : 0;
+  const count = cards.length - human;
   return (
     <section className="col" aria-label={col.label}>
       <div className="colh" style={{ background: col.color }}>
-        <span>{col.label}</span><span>{String(cards.length).padStart(2, "0")}</span>
+        <span>{col.label}</span><span>
+          {String(count).padStart(2, "0")}
+          {human > 0 && <span style={{ opacity: 0.6, marginLeft: 6 }}>+{human} human</span>}
+        </span>
       </div>
       {shown.map((c) => <BoardCard key={`${c.number}-${c.draftId ?? ""}-${c.testEnv ?? ""}`} c={c} col={col} />)}
       {cards.length > limit && (
