@@ -7,7 +7,10 @@
     "modelCeiling": "medium",
     "effortCeiling": "high",
     "tokenBudget": 0,
-    "tokenWindowHours": 5
+    "tokenWindowHours": 5,
+    "allowExtraUsage": false,
+    "stopAt5h": 0.9,
+    "stopAt7d": 0.95
   },
   "providers": [
     {
@@ -29,13 +32,27 @@
       "repo": "acme/webapp",
       "provider": "claude-sub",
       "labels": {
-        "triage": ["needs-triage", "needs-info", "idea"],
+        "triage": [
+          "needs-triage",
+          "needs-info",
+          "idea"
+        ],
         "ready": "ready-for-agent",
         "human": "ready-for-human",
         "running": "kiln:running",
         "modelPrefix": "model:",
-        "priority": ["priority:next", "priority:later"]
-      }
+        "priority": [
+          "priority:next",
+          "priority:later"
+        ],
+        "reviewAuto": "review:auto",
+        "reviewRequired": "review:required",
+        "skip": [
+          "parked",
+          "blocked"
+        ]
+      },
+      "mainBranch": "main"
     }
   ]
 }
