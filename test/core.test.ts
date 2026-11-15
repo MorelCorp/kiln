@@ -157,9 +157,9 @@ const chk = (name: string, bucket: CheckRun["bucket"]): CheckRun => ({ name, buc
 function ciHarness(polls: CheckRun[][]) {
   let t = 0, n = 0;
   return {
-    src: { prChecks: async () => polls[Math.min(n++, polls.length - 1)] },
+    src: { prChecks: async () => ({ head: "abc", checks: polls[Math.min(n++, polls.length - 1)] }) },
     polls: () => n,
-    opts: { timeoutMs: 20 * 60_000, graceMs: 30_000, pollMs: 15_000, now: () => t, sleep: async (ms: number) => void (t += ms) },
+    opts: { head: "abc", timeoutMs: 20 * 60_000, graceMs: 30_000, pollMs: 15_000, now: () => t, sleep: async (ms: number) => void (t += ms) },
   };
 }
 
@@ -199,9 +199,48 @@ test("CI wait: no checks is only accepted after the grace period", async () => {
 
 test("CI wait: tolerates a transient gh error but not a persistent one", async () => {
   let n = 0;
-  const flaky = { prChecks: async () => { if (++n === 1) throw new Error("boom"); return [chk("build", "pass")]; } };
+  const flaky = { prChecks: async () => { if (++n === 1) throw new Error("boom"); return { head: "abc", checks: [chk("build", "pass")] }; } };
   const h = ciHarness([]);
   assert.equal((await waitForCi(flaky, fakePr, h.opts)).status, "pass");
   const broken = { prChecks: async () => { throw new Error("down"); } };
   await assert.rejects(waitForCi(broken, fakePr, h.opts), /down/);
+});
+
+test("CI wait: ignores checks of an older head and waits for the pushed commit", async () => {
+  const h = ciHarness([]);
+  const seq = [
+    { head: "old", checks: [chk("build", "pass")] },
+    { head: "old", checks: [chk("build", "pass")] },
+    { head: "abc", checks: [chk("build", "pending")] },
+    { head: "abc", checks: [chk("build", "fail")] },
+  ];
+  let n = 0;
+  const src = { prChecks: async () => seq[Math.min(n++, seq.length - 1)] };
+  const r = await waitForCi(src, fakePr, h.opts);
+  assert.equal(r.status, "fail", "the old head's passing checks did not count");
+  assert.equal(n, 4);
+});
+
+test("CI wait: a head that never matches times out instead of passing", async () => {
+  const h = ciHarness([]);
+  const src = { prChecks: async () => ({ head: "old1234", checks: [chk("build", "pass")] }) };
+  const r = await waitForCi(src, fakePr, { ...h.opts, timeoutMs: 60_000 });
+  assert.equal(r.status, "timeout");
+  assert.match(r.note, /old1234/);
+});
+
+test("CI wait: an abort signal interrupts the wait, even mid-sleep", async () => {
+  const ctl = new AbortController();
+  const src = { prChecks: async () => ({ head: "abc", checks: [chk("build", "pending")] }) };
+  // Real timers: without the signal this would sleep a minute.
+  const started = Date.now();
+  const p = waitForCi(src, fakePr, { head: "abc", timeoutMs: 600_000, graceMs: 30_000, pollMs: 60_000, signal: ctl.signal });
+  setTimeout(() => ctl.abort(), 20);
+  assert.equal((await p).status, "aborted");
+  assert.ok(Date.now() - started < 5_000);
+  // Already aborted: no poll at all.
+  let polls = 0;
+  const r = await waitForCi({ prChecks: async () => (polls++, { head: "abc", checks: [] }) }, fakePr, { head: "abc", timeoutMs: 1, graceMs: 1, pollMs: 1, signal: ctl.signal });
+  assert.equal(r.status, "aborted");
+  assert.equal(polls, 0);
 });

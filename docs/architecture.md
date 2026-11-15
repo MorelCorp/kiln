@@ -109,7 +109,7 @@ the task stricter), (4) a reviewer agent in a fresh session on the same worktree
 is reset). Then Kiln pushes and opens the PR and, on GitHub projects, polls the PR's CI checks
 (`src/factory/ci.ts`: no agent, no usage; a failed or timed-out check sends the task to `gate_failed`);
 simple tasks are then squash-merged, risky ones wait for your
-review. Approving a PR re-runs steps 1-2 against the current main first (and waits for CI again), so a merge never lands on a
+review. Approving a PR returns at once and continues in the background: it re-runs steps 1-2 against the current main first (and waits for CI again, on the pushed head only; Stop and Drop interrupt the wait), so a merge never lands on a
 stale branch; a conflict sends the task back to its agent.
 
 ### Chat

@@ -9,6 +9,8 @@ export interface CiOptions {
   /** Injected by tests. */
   sleep?: (ms: number) => Promise<void>;
   now?: () => number;
+  /** Only checks reported for this PR head commit count; any other head (an older push) is ignored. */
+  head: string;
   /** Called after each poll (to show progress). */
   onPoll?: (checks: CheckRun[]) => void;
   signal?: AbortSignal;
@@ -18,9 +20,17 @@ export type CiResult =
   | { status: "pass"; checks: CheckRun[]; note: string }
   | { status: "none"; checks: CheckRun[]; note: string }
   | { status: "fail"; checks: CheckRun[]; note: string }
-  | { status: "timeout"; checks: CheckRun[]; note: string };
+  | { status: "timeout"; checks: CheckRun[]; note: string }
+  | { status: "aborted"; checks: CheckRun[]; note: string };
 
-const sleepMs = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+/** Resolves after `ms`, or as soon as the signal aborts. */
+const sleepMs = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve) => {
+    if (signal?.aborted) return resolve();
+    const done = () => (clearTimeout(t), signal?.removeEventListener("abort", done), resolve());
+    const t = setTimeout(done, ms);
+    signal?.addEventListener("abort", done, { once: true });
+  });
 
 const failing = (c: CheckRun) => c.bucket === "fail" || c.bucket === "cancel";
 const pending = (c: CheckRun) => c.bucket === "pending";
@@ -35,20 +45,34 @@ function describe(c: CheckRun): string {
  * on timeout it reports the checks still pending.
  */
 export async function waitForCi(src: Pick<Source, "prChecks">, pr: PullRequest, o: CiOptions): Promise<CiResult> {
-  const sleep = o.sleep ?? sleepMs;
+  const sleep = o.sleep ?? ((ms: number) => sleepMs(ms, o.signal));
   const now = o.now ?? Date.now;
   const start = now();
   let errors = 0;
+  let seenHead = "";
   for (;;) {
+    if (o.signal?.aborted) return { status: "aborted", checks: [], note: "Stopped while waiting for CI." };
     let checks: CheckRun[] = [];
+    let stale = false;
     try {
-      checks = await src.prChecks(pr);
+      const r = await src.prChecks(pr);
       errors = 0;
+      seenHead = r.head;
+      // Checks of an older head say nothing about the commit Kiln pushed: wait for GitHub to catch up.
+      if (r.head === o.head) checks = r.checks;
+      else stale = true;
     } catch (e) {
       // A flaky network or a rate limit should not fail the gate on the first try.
       if (++errors >= 3) throw e;
     }
-    if (!errors) {
+    if (o.signal?.aborted) return { status: "aborted", checks: [], note: "Stopped while waiting for CI." };
+    if (stale && now() - start >= o.timeoutMs) {
+      return {
+        status: "timeout", checks: [],
+        note: `CI did not finish within ${Math.round(o.timeoutMs / 60_000)} min on ${pr.url}: the PR head is ${seenHead.slice(0, 7) || "unknown"}, not the pushed commit ${o.head.slice(0, 7)}.`,
+      };
+    }
+    if (!errors && !stale) {
       o.onPoll?.(checks);
       const bad = checks.filter(failing);
       if (bad.length) {
@@ -70,7 +94,6 @@ export async function waitForCi(src: Pick<Source, "prChecks">, pr: PullRequest, 
         };
       }
     }
-    if (o.signal?.aborted) throw new Error("CI wait aborted");
     await sleep(o.pollMs);
   }
 }

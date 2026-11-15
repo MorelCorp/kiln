@@ -36,6 +36,12 @@ export interface CheckRun {
   link: string;
 }
 
+/** The PR's CI checks, with the head commit they were read for. */
+export interface PrChecks {
+  head: string;
+  checks: CheckRun[];
+}
+
 /**
  * Where a project's issues and pull requests live. GitHub through `gh` for real projects;
  * "local" keeps issues in the ledger and merges branches into the local main, for trying
@@ -55,7 +61,7 @@ export interface Source {
   /** Update the PR description (best effort for callers). */
   editPrBody(pr: PullRequest, body: string): Promise<void>;
   /** CI checks on the PR's head commit. Empty when none are reported (or for local projects). */
-  prChecks(pr: PullRequest): Promise<CheckRun[]>;
+  prChecks(pr: PullRequest): Promise<PrChecks>;
   /** Squash-merge. Returns the merge commit sha on main. */
   mergePr(pr: PullRequest, title: string, worktree: string): Promise<string>;
   /** Merged PRs from kiln/ branches, newest first. */
@@ -198,7 +204,19 @@ export class GitHubSource implements Source {
     await this.gh(["pr", "edit", String(pr.number), "-R", this.p.repo, "--body", body]);
   }
 
-  async prChecks(pr: PullRequest): Promise<CheckRun[]> {
+  private async prHead(pr: PullRequest): Promise<string> {
+    return JSON.parse(await this.gh(["pr", "view", String(pr.number), "-R", this.p.repo, "--json", "headRefOid"])).headRefOid ?? "";
+  }
+
+  async prChecks(pr: PullRequest): Promise<PrChecks> {
+    // The head is read on both sides of the checks: if a push landed in between, report no head.
+    const before = await this.prHead(pr);
+    const checks = await this.readChecks(pr);
+    const after = await this.prHead(pr);
+    return { head: before === after ? before : "", checks };
+  }
+
+  private async readChecks(pr: PullRequest): Promise<CheckRun[]> {
     let out = "";
     try {
       out = await this.gh(["pr", "checks", String(pr.number), "-R", this.p.repo, "--json", "name,bucket,link"]);
@@ -333,8 +351,8 @@ class LocalSource implements Source {
 
   async editPrBody() {}
 
-  async prChecks(): Promise<CheckRun[]> {
-    return [];
+  async prChecks(): Promise<PrChecks> {
+    return { head: "", checks: [] };
   }
 
   async mergePr(pr: PullRequest, title: string, worktree: string) {

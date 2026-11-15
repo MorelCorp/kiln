@@ -16,6 +16,8 @@ export type GateOutcome =
   | { kind: "send_back"; note: string }
   | { kind: "escalate"; note: string }
   | { kind: "ci_failed"; note: string }
+  /** You stopped or dropped the task during the CI wait: its phase is already set. */
+  | { kind: "aborted" }
   | { kind: "error"; note: string };
 
 /** Host git without running any of the project's hooks (the branch is agent-written). */
@@ -156,25 +158,35 @@ export const CI_GRACE_MS = 30_000;
  * it holds no agent slot and uses no model. Records a "CI" step on the gate and in the PR body.
  */
 export async function awaitCi(
-  f: Factory, p: ProjectConfig, pr: PullRequest, gate: GateState, save: () => void, body?: (g: GateState) => string,
+  f: Factory, p: ProjectConfig, task: TaskRow, pr: PullRequest, head: string, gate: GateState, save: () => void,
+  body?: (g: GateState) => string,
   opts: { pollMs?: number; graceMs?: number; sleep?: (ms: number) => Promise<void> } = {},
-): Promise<{ ok: true } | { ok: false; note: string }> {
+): Promise<{ ok: true } | { ok: false; note: string; aborted?: boolean }> {
   const src = f.source(p);
   gate.ci = { status: "pending" };
   save();
-  const res = await waitForCi(src, pr, {
-    timeoutMs: loadRules(p).ciTimeoutSeconds * 1000,
-    graceMs: opts.graceMs ?? CI_GRACE_MS,
-    pollMs: opts.pollMs ?? CI_POLL_MS,
-    sleep: opts.sleep,
-    onPoll: (checks) => {
-      const out = ciSummary(checks);
-      if (out !== (gate.ci?.output ?? "")) {
-        gate.ci = { status: "pending", output: out };
-        save();
-      }
-    },
-  });
+  const ctl = f.registerCiWait(p.id, task.number);
+  let res;
+  try {
+    res = await waitForCi(src, pr, {
+      head,
+      signal: ctl.signal,
+      timeoutMs: loadRules(p).ciTimeoutSeconds * 1000,
+      graceMs: opts.graceMs ?? f.ciTiming.graceMs,
+      pollMs: opts.pollMs ?? f.ciTiming.pollMs,
+      sleep: opts.sleep,
+      onPoll: (checks) => {
+        const out = ciSummary(checks);
+        if (out !== (gate.ci?.output ?? "")) {
+          gate.ci = { status: "pending", output: out };
+          save();
+        }
+      },
+    });
+  } finally {
+    f.clearCiWait(p.id, task.number, ctl);
+  }
+  if (res.status === "aborted") return { ok: false, note: res.note, aborted: true };
   const out = ciSummary(res.checks) || res.note;
   const ok = res.status === "pass" || res.status === "none";
   gate.ci = { status: ok ? "pass" : "fail", output: out };
@@ -242,8 +254,8 @@ export async function runGate(f: Factory, p: ProjectConfig, issue: IssueDetail, 
       return { kind: "pr_review", note: hits.length ? `Touches ${hits.join(", ")}: your review is required.` : "Risky task: your review is required." };
     }
     if (waitCi) {
-      const ci = await awaitCi(f, p, pr, gate, save, (g) => prBody(issue, f.ledger.getTask(p.id, task.number)!, g, hits));
-      if (!ci.ok) return { kind: "ci_failed", note: ci.note };
+      const ci = await awaitCi(f, p, task, pr, head, gate, save, (g) => prBody(issue, f.ledger.getTask(p.id, task.number)!, g, hits));
+      if (!ci.ok) return ci.aborted ? { kind: "aborted" } : { kind: "ci_failed", note: ci.note };
     }
     const sha = await src.mergePr(pr, issue.title, wt3);
     if (p.source === "local") await src.closeIssue(issue.number, `Merged by Kiln (${sha.slice(0, 7)}).`);
