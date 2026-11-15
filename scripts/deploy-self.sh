@@ -4,7 +4,8 @@
 # Refuses to run in a checkout with local changes or on a branch other than main: use a dedicated
 # deploy clone (see scripts/install-service.sh), not your development checkout.
 set -euo pipefail
-cd "$(git rev-parse --show-toplevel)"
+# The clone this script belongs to, wherever it is called from (the cwd may be another repo).
+cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.."
 
 if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
   echo "Local changes in $(pwd): refusing to update. This should be a deploy clone." >&2
