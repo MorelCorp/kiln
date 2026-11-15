@@ -30,7 +30,9 @@ export function NewTaskPage() {
     }
   });
   const ta = useRef<HTMLTextAreaElement>(null);
-  useEffect(() => ta.current?.focus(), []);
+  useEffect(() => {
+    ta.current?.focus();
+  }, []);
   useEffect(() => {
     try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(created.slice(-12))); } catch { /* private mode */ }
   }, [created]);
