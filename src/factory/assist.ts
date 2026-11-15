@@ -14,6 +14,8 @@ async function hostAsk(
 ): Promise<HostAskResult> {
   const provider = f.provider(p);
   await provider.check();
+  const blocked = f.extraUsageBlock();
+  if (blocked) throw new Error(`Not sent: ${blocked}, and extra usage is off (Pace → Allow extra usage).`);
   const row: RunRow = {
     id: `${new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14)}-${p.id}-${number ?? "x"}-${kind}-${randomUUID().slice(0, 6)}`,
     project: p.id, number, kind, status: "running", provider: provider.config.id, model: provider.modelFor(o.tier),
