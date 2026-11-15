@@ -11,7 +11,7 @@ import { reviewPrompt } from "../runs/prompts.ts";
 import type { Factory } from "./factory.ts";
 
 export type GateOutcome =
-  | { kind: "merged"; sha: string }
+  | { kind: "merged"; sha: string; /** The PR, when it was merged outside Kiln */ outside?: PullRequest }
   | { kind: "pr_review"; note: string }
   | { kind: "send_back"; note: string }
   | { kind: "escalate"; note: string }
@@ -233,6 +233,10 @@ export async function runGate(f: Factory, p: ProjectConfig, issue: IssueDetail, 
   save();
 
   try {
+    // Merged meanwhile outside Kiln (on GitHub): nothing left to gate.
+    const merged = await f.mergedPr(p, task);
+    if (merged) return { kind: "merged", sha: merged.mergeCommit ?? "", outside: merged };
+
     const rc = await rebaseAndCheck(f, p, task, gate, save);
     if (!rc.ok) return { kind: "send_back", note: rc.note };
 

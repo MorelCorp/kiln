@@ -112,6 +112,10 @@ simple tasks are then squash-merged, risky ones wait for your
 review. Approving a PR returns at once and continues in the background: it re-runs steps 1-2 against the current main first (and waits for CI again, on the pushed head only; Stop and Drop interrupt the wait), so a merge never lands on a
 stale branch; a conflict sends the task back to its agent.
 
+A PR merged outside Kiln (approved and merged on GitHub) ends its task as `merged`: the gate and
+Approve check the PR first, and each board sync reconciles idle tasks (not during a run or the gate)
+whose PR GitHub reports as merged.
+
 ### Chat
 
 The chat panel runs `claude -p --resume <id>` on the host, read-only (`--permission-mode plan`),

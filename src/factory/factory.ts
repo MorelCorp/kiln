@@ -27,6 +27,10 @@ const HELD: Phase[] = [
   "planning", "plan_review", "implementing", "question", "gating", "pr_review", "gate_failed", "failed",
   "usage_paused", "interrupted", "stopped",
 ];
+/** Phases in which the task is over for Kiln. */
+const SETTLED: Phase[] = ["merged", "human", "dropped"];
+/** Phases in which a run or the gate is working the task. */
+const BUSY: Phase[] = ["planning", "implementing", "gating"];
 /** Phases that need the human. */
 export const NEEDS_YOU: Phase[] = ["plan_review", "question", "pr_review", "gate_failed", "failed", "usage_paused", "interrupted", "stopped"];
 const AGENT_KINDS: RunKind[] = ["plan", "implement", "fix", "review"];
@@ -152,6 +156,7 @@ export class Factory {
         const tasks = issues.map((i) => classify(i, p)).sort((a, b) => a.priority - b.priority || a.number - b.number);
         this.boards.set(projectId, { at: Date.now(), tasks });
         this.emit({ type: "board", project: projectId, data: { at: now() } });
+        void this.reconcile(p).catch((e) => console.warn(`[${p.id}] reconcile: ${e instanceof Error ? e.message : String(e)}`));
         return tasks;
       } finally {
         this.syncing.delete(projectId);
@@ -159,6 +164,41 @@ export class Factory {
     })();
     this.syncing.set(projectId, job);
     return job;
+  }
+
+  /** The task's own PR, when GitHub says it is merged (by Kiln or by someone on GitHub). */
+  async mergedPr(p: ProjectConfig, task: TaskRow): Promise<PullRequest | undefined> {
+    if (!task.prNumber) return undefined;
+    const pr = await this.source(p).findPr(task.branch);
+    return pr && pr.number === task.prNumber && pr.state === "MERGED" ? pr : undefined;
+  }
+
+  private reconciling = new Set<string>();
+
+  /**
+   * Catches up with merges done outside Kiln (e.g. a PR approved and merged on GitHub): an idle task
+   * whose PR is merged becomes `merged`. Busy tasks are left alone; the gate checks for itself.
+   */
+  async reconcile(p: ProjectConfig) {
+    if (this.reconciling.has(p.id)) return;
+    this.reconciling.add(p.id);
+    try {
+      for (const t of this.ledger.listTasks(p.id)) {
+        if (!t.prNumber || SETTLED.includes(t.phase) || BUSY.includes(t.phase)) continue;
+        if (this.liveFor(p.id, t.number) || this.starting.has(`${p.id}#${t.number}`)) continue;
+        const pr = await this.mergedPr(p, t);
+        const cur = this.ledger.getTask(p.id, t.number);
+        if (!pr || !cur || cur.phase !== t.phase || this.liveFor(p.id, t.number)) continue;
+        this.markMergedOutside(cur, pr);
+      }
+    } finally {
+      this.reconciling.delete(p.id);
+    }
+  }
+
+  markMergedOutside(t: TaskRow, pr: PullRequest) {
+    this.setPhase(t, "merged", { mergedSha: pr.mergeCommit, mergedAt: pr.mergedAt ?? now(), note: `PR #${pr.number} was merged outside Kiln.` });
+    this.toast(`#${t.number} merged outside Kiln (PR #${pr.number})`, "info", t.project);
   }
 
   boardSyncedAt(projectId: string): number | undefined {
@@ -634,6 +674,7 @@ export class Factory {
     task = this.ledger.getTask(p.id, issue.number)!;
     switch (outcome.kind) {
       case "merged":
+        if (outcome.outside) return void this.markMergedOutside(task, outcome.outside);
         this.setPhase(task, "merged", { mergedSha: outcome.sha, mergedAt: now(), note: task.note });
         this.toast(`#${task.number} merged`, "info", p.id);
         return;
@@ -812,6 +853,7 @@ export class Factory {
     }
     const pr = await this.source(p).findPr(task.branch);
     if (!pr) throw new Error("PR not found");
+    if (pr.state === "MERGED" && pr.number === task.prNumber) return void this.markMergedOutside(task, pr);
     const running = this.setPhase(task, "gating", { note: "Approved: rebasing, then waiting for CI before merging." });
     void this.mergeApproved(p, issue, running, pr).catch((e) => {
       const cur = this.ledger.getTask(p.id, number);
