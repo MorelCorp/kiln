@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { StreamParser, extractJsonTag, extractTag, type RunEvent, type Usage } from "../src/runs/stream.ts";
 import { globToRegExp, riskyMatches } from "../src/factory/gate.ts";
 import { classify, labelsToClearOnPhase } from "../src/tasks/board.ts";
+import { GitHubSource } from "../src/tasks/source.ts";
 import { clampEffort, clampTier } from "../src/providers/types.ts";
 import { repoFromRemote, type ProjectConfig } from "../src/config.ts";
 
@@ -101,4 +102,45 @@ test("a merged task drops the ready and running labels; other terminal phases on
   assert.deepEqual(labelsToClearOnPhase("merged", project), ["ready-for-agent", "kiln:running"]);
   assert.deepEqual(labelsToClearOnPhase("human", project), ["kiln:running"]);
   assert.deepEqual(labelsToClearOnPhase("dropped", project), ["kiln:running"]);
+});
+
+function fakeGithub(failDelete: boolean) {
+  const calls: string[][] = [];
+  const run = async (args: string[]) => {
+    calls.push(args);
+    if (args[0] === "api" && failDelete) throw new Error("HTTP 422: Reference does not exist");
+    if (args[0] === "pr" && args[1] === "list") {
+      return JSON.stringify([{
+        number: 7, url: "u", headRefName: "kiln/issue-7", state: "MERGED", mergedAt: "t",
+        mergeCommit: { oid: "abc1234" }, title: "t",
+      }]);
+    }
+    return "";
+  };
+  const p = { id: "web", name: "web", path: "/tmp/none", repo: "acme/webapp" } as ProjectConfig;
+  const src = new GitHubSource(p, run, async () => "deadbeef");
+  const pr = { number: 7, url: "u", headRefName: "kiln/issue-7", state: "OPEN" as const, mergedAt: null, mergeCommit: null, title: "t" };
+  return { calls, src, pr };
+}
+
+test("GitHubSource.mergePr deletes the remote head branch after merging", async () => {
+  const { calls, src, pr } = fakeGithub(false);
+  assert.equal(await src.mergePr(pr, "title", "/tmp/wt"), "abc1234");
+  const merge = calls.findIndex((c) => c[0] === "pr" && c[1] === "merge");
+  const del = calls.findIndex((c) => c[0] === "api");
+  assert.ok(merge >= 0 && del > merge, "delete comes after the merge");
+  assert.deepEqual(calls[del], ["api", "-X", "DELETE", "repos/acme/webapp/git/refs/heads/kiln/issue-7"]);
+});
+
+test("GitHubSource.mergePr: a failed branch delete does not fail the merge", async () => {
+  const { src, pr } = fakeGithub(true);
+  const warn = console.warn;
+  const logged: string[] = [];
+  console.warn = (m: string) => void logged.push(m);
+  try {
+    assert.equal(await src.mergePr(pr, "title", "/tmp/wt"), "abc1234");
+  } finally {
+    console.warn = warn;
+  }
+  assert.ok(logged.some((m) => m.includes("kiln/issue-7")));
 });
