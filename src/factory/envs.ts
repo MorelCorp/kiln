@@ -20,6 +20,8 @@ export interface EnvView {
   checkedAt: string;
   deployLabel?: string;
   canDeploy: boolean;
+  /** Options for the deploy button; the first is the default. Empty when the deploy takes none. */
+  deployChoices: string[];
   candidate: string | null;
   gates: { name: string; ok: boolean; output: string }[];
 }
@@ -108,7 +110,8 @@ export async function probeEnvs(f: Factory, p: ProjectConfig, force = false): Pr
     defs.map(async (d: EnvProbe): Promise<EnvView> => {
       const v: EnvView = {
         id: d.id, name: d.name, url: d.url, version: null, sha: null, health: null, error: null,
-        checkedAt: new Date().toISOString(), deployLabel: d.deployLabel, canDeploy: !!d.deploy, candidate: null, gates: [],
+        checkedAt: new Date().toISOString(), deployLabel: d.deployLabel, canDeploy: !!d.deploy,
+        deployChoices: (d.deployChoices ?? []).map(String), candidate: null, gates: [],
       };
       try {
         if (d.probe) {
@@ -157,10 +160,21 @@ export function cachedEnvs(p: ProjectConfig): EnvsView | undefined {
 
 const deploying = new Set<string>();
 
+/** The deploy option to run with: the requested one if the env lists it, its first one if none was asked. */
+export function deployChoice(d: EnvProbe, requested?: unknown): string | undefined {
+  const choices = (d.deployChoices ?? []).map(String);
+  if (!choices.length) return undefined;
+  if (requested === undefined || requested === null || requested === "") return choices[0];
+  const c = String(requested);
+  if (!choices.includes(c)) throw new Error(`Unknown deploy option "${c}" for ${d.id} (one of: ${choices.join(", ")})`);
+  return c;
+}
+
 /** Runs an env's deploy script. Never automatic: only from a button. */
-export async function deploy(f: Factory, p: ProjectConfig, envId: string): Promise<number> {
+export async function deploy(f: Factory, p: ProjectConfig, envId: string, requested?: unknown): Promise<number> {
   const d = loadEnvs(p).envs.find((e) => e.id === envId);
   if (!d?.deploy) throw new Error(`No deploy command for ${envId}`);
+  const choice = deployChoice(d, requested);
   const key = `${p.id}/${envId}`;
   if (deploying.has(key)) throw new Error(`A deploy to ${envId} is already running`);
   const view = await probeEnvs(f, p, true);
@@ -171,11 +185,13 @@ export async function deploy(f: Factory, p: ProjectConfig, envId: string): Promi
   deploying.add(key);
   const logPath = join(RUNS_DIR, `deploy-${p.id}-${envId}-${Date.now()}.log`);
   const row = f.ledger.addDeploy({
-    project: p.id, env: envId, version: env?.candidate ?? null, status: "running", startedAt: new Date().toISOString(),
+    project: p.id, env: envId, version: [env?.candidate, choice].filter(Boolean).join(" · ") || null, status: "running", startedAt: new Date().toISOString(),
     endedAt: null, logPath,
   });
   f.emit({ type: "deploy", project: p.id, data: { deploy: row } });
-  const child = spawn("/bin/bash", ["-lc", d.deploy], { cwd: p.path, env: process.env });
+  const child = spawn("/bin/bash", ["-lc", d.deploy], {
+    cwd: p.path, env: choice ? { ...process.env, KILN_DEPLOY_CHOICE: choice } : process.env,
+  });
   const onData = (b: Buffer) => {
     const text = b.toString();
     appendFileSync(logPath, text);

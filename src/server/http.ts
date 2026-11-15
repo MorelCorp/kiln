@@ -197,7 +197,9 @@ route("GET", "/api/p/:pid/envs", async ({ f, params, query }) => {
   const view = await probeEnvs(f, p, query.get("force") === "1");
   return { ...view, deploys: f.ledger.listDeploys(p.id) };
 });
-route("POST", "/api/p/:pid/envs/:env/deploy", async ({ f, params }) => ({ id: await deploy(f, f.project(params.pid), params.env) }));
+route("POST", "/api/p/:pid/envs/:env/deploy", async ({ f, params, body }) => ({
+  id: await deploy(f, f.project(params.pid), params.env, body?.choice),
+}));
 route("GET", "/api/p/:pid/deploys/:id/log", ({ f, params }) => {
   const d = f.ledger.listDeploys(params.pid, 100).find((x) => x.id === num(params.id));
   if (!d) throw new HttpError(404, "No deploy");

@@ -224,6 +224,7 @@ export interface EnvView {
   checkedAt: string;
   deployLabel?: string;
   canDeploy: boolean;
+  deployChoices: string[];
   candidate: string | null;
   gates: { name: string; ok: boolean; output: string }[];
 }

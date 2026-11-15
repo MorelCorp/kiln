@@ -263,7 +263,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join as joinPath } from "node:path";
 import { execFileSync } from "node:child_process";
-import { localMergeCommit, mainSubjects } from "../src/factory/envs.ts";
+import { deployChoice, localMergeCommit, mainSubjects } from "../src/factory/envs.ts";
 
 test("localMergeCommit finds a squash commit on main after its history was rewritten", async () => {
   const dir = mkdtempSync(joinPath(tmpdir(), "kiln-rewrite-"));
@@ -331,4 +331,14 @@ test("deploys cut short by a restart: done when the daemon now runs that version
   assert.equal(status.get(other.id), "restarted");
   assert.equal(status.get(unknown.id), "restarted");
   assert.equal(status.get(finished.id), "failed");
+});
+
+test("deployChoice defaults to the first option and refuses one the env does not list", () => {
+  const env = { id: "staging", name: "Staging", deploy: "./deploy.sh", deployChoices: ["patch", "minor", "major"] };
+  assert.equal(deployChoice(env), "patch");
+  assert.equal(deployChoice(env, ""), "patch");
+  assert.equal(deployChoice(env, "minor"), "minor");
+  assert.throws(() => deployChoice(env, "major; rm -rf /"), /Unknown deploy option/);
+  // An env without options ignores whatever was sent.
+  assert.equal(deployChoice({ id: "prod", name: "Prod", deploy: "./promote.sh" }, "minor"), undefined);
 });

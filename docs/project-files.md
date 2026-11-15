@@ -72,8 +72,11 @@ envs:
     probe: curl -fsS https://staging.example.com/version
     health: curl -fsS -o /dev/null -w '%{http_code}' https://staging.example.com/health
     # Run from the project root when you press the button. Output streams into Kiln.
-    deploy: ./scripts/deploy-staging.sh
+    # The pick reaches the script as $KILN_DEPLOY_CHOICE (validated against this list).
+    deploy: ./scripts/deploy-staging.sh --"$KILN_DEPLOY_CHOICE"
     deployLabel: Deploy staging
+    # Optional: a toggle next to the button; the first entry is the default.
+    deployChoices: [patch, minor, major]
     candidate: git describe --tags --abbrev=0 origin/main
 
   - id: prod
