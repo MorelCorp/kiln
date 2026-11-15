@@ -64,12 +64,20 @@ export async function git(cwd: string, args: string[], opts: { timeout?: number 
 // GitHub
 // ---------------------------------------------------------------------------
 
-class GitHubSource implements Source {
-  constructor(private p: ProjectConfig) {}
+/** Runs `gh` with the given args in a directory and returns trimmed stdout. Injectable for tests. */
+export type GhRunner = (args: string[], cwd: string) => Promise<string>;
+type GitRunner = (cwd: string, args: string[]) => Promise<string>;
 
-  private async gh(args: string[]): Promise<string> {
-    const { stdout } = await exec("gh", args, { cwd: this.p.path, maxBuffer: 32 * 1024 * 1024, timeout: 60_000 });
-    return stdout.trim();
+const runGh: GhRunner = async (args, cwd) => {
+  const { stdout } = await exec("gh", args, { cwd, maxBuffer: 32 * 1024 * 1024, timeout: 60_000 });
+  return stdout.trim();
+};
+
+export class GitHubSource implements Source {
+  constructor(private p: ProjectConfig, private run: GhRunner = runGh, private gitRun: GitRunner = git) {}
+
+  private gh(args: string[]): Promise<string> {
+    return this.run(args, this.p.path);
   }
 
   private async list(args: string[]): Promise<Issue[]> {
@@ -176,13 +184,24 @@ class GitHubSource implements Source {
   }
 
   async mergePr(pr: PullRequest, title: string, worktree: string) {
-    const head = await git(worktree, ["rev-parse", "HEAD"]);
+    const head = await this.gitRun(worktree, ["rev-parse", "HEAD"]);
+    // gh's own --delete-branch would also switch the local branch, which breaks with worktrees.
     await this.gh([
       "pr", "merge", String(pr.number), "-R", this.p.repo, "--squash", "--delete-branch=false",
       "--subject", title, "--match-head-commit", head,
     ]);
+    await this.deleteRemoteBranch(pr.headRefName);
     const merged = await this.findPr(pr.headRefName);
     return merged?.mergeCommit ?? "";
+  }
+
+  /** Best effort: the merge already happened, so a failure here is logged and never thrown. */
+  private async deleteRemoteBranch(branch: string) {
+    try {
+      await this.gh(["api", "-X", "DELETE", `repos/${this.p.repo}/git/refs/heads/${branch}`]);
+    } catch (e) {
+      console.warn(`[${this.p.id}] could not delete remote branch ${branch} after merge: ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
 
   async mergedPrs(limit = 50) {
