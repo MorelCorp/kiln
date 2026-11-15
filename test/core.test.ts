@@ -108,6 +108,7 @@ function fakeGithub(failDelete: boolean) {
   const calls: string[][] = [];
   const run = async (args: string[]) => {
     calls.push(args);
+    if (args[0] === "api" && args[1] === "user") return "1+someone@users.noreply.github.com";
     if (args[0] === "api" && failDelete) throw new Error("HTTP 422: Reference does not exist");
     if (args[0] === "pr" && args[1] === "list") {
       return JSON.stringify([{
@@ -127,9 +128,16 @@ test("GitHubSource.mergePr deletes the remote head branch after merging", async 
   const { calls, src, pr } = fakeGithub(false);
   assert.equal(await src.mergePr(pr, "title", "/tmp/wt"), "abc1234");
   const merge = calls.findIndex((c) => c[0] === "pr" && c[1] === "merge");
-  const del = calls.findIndex((c) => c[0] === "api");
+  const del = calls.findIndex((c) => c[0] === "api" && c[2] === "DELETE");
   assert.ok(merge >= 0 && del > merge, "delete comes after the merge");
   assert.deepEqual(calls[del], ["api", "-X", "DELETE", "repos/acme/webapp/git/refs/heads/kiln/issue-7"]);
+});
+
+test("GitHubSource.mergePr authors the squash commit with the account's noreply address", async () => {
+  const { calls, src, pr } = fakeGithub(false);
+  await src.mergePr(pr, "title", "/tmp/wt");
+  const merge = calls.find((c) => c[0] === "pr" && c[1] === "merge")!;
+  assert.equal(merge[merge.indexOf("--author-email") + 1], "1+someone@users.noreply.github.com");
 });
 
 test("GitHubSource.mergePr: a failed branch delete does not fail the merge", async () => {
