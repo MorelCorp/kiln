@@ -9,6 +9,7 @@ import { git } from "../tasks/source.ts";
 import * as assist from "../factory/assist.ts";
 import { boardView, inboxView, runSummary, tokensView, tierName } from "./views.ts";
 import type { RunEvent } from "../runs/stream.ts";
+import { readIssueThread } from "./thread.ts";
 
 const WEB_DIST = join(KILN_ROOT, "web", "dist");
 const VERSION = JSON.parse(readFileSync(join(KILN_ROOT, "package.json"), "utf8")).version ?? "0.1.0";
@@ -130,6 +131,19 @@ route("GET", "/api/p/:pid/tasks/:n", async ({ f, params }) => {
     rules: { riskyPaths: loadRules(p).riskyPaths },
     worktree: task ? worktreePath(p, task.branch) : null,
   };
+});
+
+// Light read for the board's detail modal: issue + comments (read-only), Kiln's task state and the log tail.
+route("GET", "/api/p/:pid/tasks/:n/thread", async ({ f, params }) => {
+  const p = f.project(params.pid);
+  const n = num(params.n);
+  const issue = await readIssueThread(f.source(p), n);
+  const task = f.ledger.getTask(p.id, n) ?? null;
+  const runs = f.ledger.listRuns({ project: p.id, number: n, limit: 30 }).map((r) => runSummary(f, r));
+  const live = f.liveFor(p.id, n);
+  const current = live ? f.runView(live) : runs.find((r) => r.kind !== "review") ?? runs[0] ?? null;
+  const events = live ? live.events : current ? readEvents(String(current.logPath).replace(/\.log$/, ".jsonl"), 80) : [];
+  return { issue, task, current, events: events.slice(-80) };
 });
 
 route("GET", "/api/p/:pid/tasks/:n/diff", async ({ f, params }) => {

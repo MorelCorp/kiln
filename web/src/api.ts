@@ -169,6 +169,13 @@ export interface TaskDetail {
   worktree: string | null;
 }
 
+export interface IssueThread {
+  issue: IssueDetail;
+  task: TaskDetail["task"];
+  current: RunView | null;
+  events: RunEvent[];
+}
+
 export interface Draft {
   id: number;
   project: string;

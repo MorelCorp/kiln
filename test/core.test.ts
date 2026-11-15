@@ -281,3 +281,37 @@ test("localMergeCommit finds a squash commit on main after its history was rewri
   // A merge commit that is on main is used as is.
   assert.equal(await localMergeCommit(p, { ...pr, mergeCommit: rewritten }, "main", mainSubjects(p, "main")), rewritten);
 });
+
+import { readIssueThread } from "../src/server/thread.ts";
+
+test("GitHubSource.getIssue reads body and comments through gh, read-only", async () => {
+  const calls: string[][] = [];
+  const run = async (args: string[]) => {
+    calls.push(args);
+    return JSON.stringify({
+      number: 18, title: "t", url: "https://github.com/acme/webapp/issues/18", state: "OPEN", closedAt: null,
+      labels: [{ name: "ready-for-agent" }], body: "## Context\nbody",
+      comments: [
+        { body: "second", author: { login: "bob" }, createdAt: "2026-01-02T00:00:00Z" },
+        { body: "first", author: null, createdAt: "2026-01-01T00:00:00Z" },
+      ],
+    });
+  };
+  const p = { id: "web", name: "web", path: "/tmp/none", repo: "acme/webapp" } as ProjectConfig;
+  const src = new GitHubSource(p, run);
+  const issue = await readIssueThread(src, 18);
+  assert.equal(issue.body, "## Context\nbody");
+  assert.deepEqual(issue.labels, ["ready-for-agent"]);
+  assert.deepEqual(issue.comments.map((c) => [c.author, c.body]), [["unknown", "first"], ["bob", "second"]], "oldest first, missing author tolerated");
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0].slice(0, 3), ["issue", "view", "18"], "only a read call goes to gh");
+});
+
+test("readIssueThread tolerates an issue with no comments and only calls getIssue", async () => {
+  const source = {
+    getIssue: async (n: number) => ({ number: n, title: "t", url: "u", state: "CLOSED" as const, closedAt: null, labels: [], body: undefined as unknown as string, comments: undefined as unknown as [] }),
+  };
+  const issue = await readIssueThread(source, 3);
+  assert.equal(issue.body, "");
+  assert.deepEqual(issue.comments, []);
+});
