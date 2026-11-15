@@ -21,7 +21,28 @@ export type GateOutcome =
   | { kind: "error"; note: string };
 
 /** Host git without running any of the project's hooks (the branch is agent-written). */
-const safeGit = (cwd: string, args: string[]) => git(cwd, ["-c", "core.hooksPath=/dev/null", ...args]);
+const safeGit = (cwd: string, args: string[], env?: Record<string, string>) =>
+  git(cwd, ["-c", "core.hooksPath=/dev/null", ...args], env ? { env } : {});
+
+/**
+ * Re-authors every commit in `base..HEAD` that does not carry `email` as both author and committer.
+ * Agents commit with the project clone's git identity, which can be a private address that GitHub
+ * refuses to receive (GH007, "push would publish a private email address"). Trees and messages are
+ * unchanged; the author name is kept from HEAD. Returns whether anything was rewritten.
+ */
+export async function reauthorCommits(wt: string, base: string, email: string): Promise<boolean> {
+  const idents = (await safeGit(wt, ["log", "--format=%ae%n%ce", `${base}..HEAD`])).split("\n").filter(Boolean);
+  if (idents.every((e) => e === email)) return false;
+  const name = await safeGit(wt, ["log", "-1", "--format=%an"]);
+  const amend = "git -c core.hooksPath=/dev/null commit --amend --no-edit --no-verify --allow-empty --reset-author --quiet";
+  try {
+    await safeGit(wt, ["rebase", "--quiet", base, "--exec", amend], { GIT_AUTHOR_NAME: name, GIT_AUTHOR_EMAIL: email, GIT_COMMITTER_NAME: name, GIT_COMMITTER_EMAIL: email });
+  } catch (e) {
+    await safeGit(wt, ["rebase", "--abort"]).catch(() => undefined);
+    throw e;
+  }
+  return true;
+}
 
 /**
  * The bubblewrap sandbox for a project: the provider's session store plus whatever the project's
@@ -104,8 +125,6 @@ export async function rebaseAndCheck(
   // 1. Rebase on current main.
   try {
     await safeGit(wt, ["rebase", base]);
-    gate.rebase = "pass";
-    save();
   } catch {
     const conflicts = await safeGit(wt, ["diff", "--name-only", "--diff-filter=U"]).catch(() => "");
     await safeGit(wt, ["rebase", "--abort"]).catch(() => undefined);
@@ -116,6 +135,12 @@ export async function rebaseAndCheck(
       note: `Your branch does not rebase cleanly on ${base}${conflicts ? ` (conflicts in: ${conflicts.split("\n").join(", ")})` : ""}. Run \`git rebase ${base}\`, resolve the conflicts, re-run the tests and commit.`,
     };
   }
+  // Before anything reads HEAD (the CI wait and the merge match on it): give the commits the
+  // identity the source accepts. No fallback: if it cannot be read, the gate fails.
+  const email = await src.commitEmail();
+  if (email) await reauthorCommits(wt, base, email);
+  gate.rebase = "pass";
+  save();
 
   // 2. Project checks, inside the sandbox (the code is agent-written).
   gate.checks = rules.checks.map((c) => ({ name: c.name, status: "pending" as const }));

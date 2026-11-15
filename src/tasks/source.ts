@@ -66,14 +66,20 @@ export interface Source {
   mergePr(pr: PullRequest, title: string, worktree: string): Promise<string>;
   /** Merged PRs from kiln/ branches, newest first. */
   mergedPrs(limit?: number): Promise<PullRequest[]>;
+  /**
+   * The email every pushed commit must carry (the account's GitHub noreply address), or null when
+   * any identity will do (local projects). The gate re-authors the branch's commits to it.
+   */
+  commitEmail(): Promise<string | null>;
   /** The ref the gate rebases onto ("origin/main" or "main"). */
   baseRef(): string;
   /** Bring the base ref up to date (git fetch). */
   fetch(): Promise<void>;
 }
 
-export async function git(cwd: string, args: string[], opts: { timeout?: number } = {}): Promise<string> {
-  const { stdout } = await exec("git", args, { cwd, maxBuffer: 64 * 1024 * 1024, timeout: opts.timeout ?? 120_000 });
+export async function git(cwd: string, args: string[], opts: { timeout?: number; env?: Record<string, string> } = {}): Promise<string> {
+  const env = opts.env ? { ...process.env, ...opts.env } : undefined;
+  const { stdout } = await exec("git", args, { cwd, env, maxBuffer: 64 * 1024 * 1024, timeout: opts.timeout ?? 120_000 });
   return stdout.trim();
 }
 
@@ -245,6 +251,10 @@ export class GitHubSource implements Source {
     return merged?.mergeCommit ?? "";
   }
 
+  commitEmail(): Promise<string | null> {
+    return this.noreplyEmail();
+  }
+
   private noreply?: Promise<string>;
   /**
    * The merging account's GitHub noreply address. Without --author-email, GitHub authors a squash
@@ -348,6 +358,10 @@ class LocalSource implements Source {
 
   async pushBranch() {
     // Nothing to push: the worktree's branch already lives in the local repo.
+  }
+
+  async commitEmail() {
+    return null;
   }
 
   async findPr(branch: string): Promise<PullRequest | undefined> {

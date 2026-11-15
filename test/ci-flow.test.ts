@@ -38,7 +38,7 @@ import type { PrChecks, PullRequest, Source } from "../src/tasks/source.ts";
 
 const pr: PullRequest = { number: 5, url: "https://github.com/acme/webapp/pull/5", headRefName: "kiln/issue-1", state: "OPEN", mergedAt: null, mergeCommit: null, title: "t" };
 
-function setup(prChecks: () => Promise<PrChecks>) {
+function setup(prChecks: () => Promise<PrChecks>, commitEmail: string | null = null) {
   const f = new Factory();
   f.ciTiming = { pollMs: 5, graceMs: 0 };
   const merged: string[] = [];
@@ -46,7 +46,7 @@ function setup(prChecks: () => Promise<PrChecks>) {
     fetch: async () => {}, baseRef: () => "main", findPr: async () => pr, pushBranch: async () => {},
     getIssue: async () => ({ number: 1, title: "t", url: "u", state: "OPEN", closedAt: null, labels: [], body: "", comments: [] }),
     editLabels: async () => {}, listIssues: async () => [], editPrBody: async () => {}, closeIssue: async () => {},
-    prChecks, mergePr: async () => (merged.push("x"), "deadbeefcafe"),
+    prChecks, mergePr: async () => (merged.push("x"), "deadbeefcafe"), commitEmail: async () => commitEmail,
   } as unknown as Source;
   (f as unknown as { source: () => Source }).source = () => fake;
   const number = 1;
@@ -108,4 +108,18 @@ test("Stop and Drop interrupt the CI wait without merging", async () => {
     assert.equal(task().phase, action === "stop" ? "stopped" : "dropped");
     assert.equal(merged.length, 0);
   }
+});
+
+// Last: it rewrites kiln/issue-1, which the tests above match by its original sha.
+test("approvePr: commits with another email are re-authored to the source's commit email before the push", async () => {
+  const noreply = "1+acme@users.noreply.github.com";
+  const branchHead = () => sh(repo, "rev-parse", "kiln/issue-1");
+  const { f, merged, task } = setup(async () => ({ head: branchHead(), checks: [{ name: "build", bucket: "pass", link: "l" }] }), noreply);
+  await f.approvePr("webapp", 1);
+  await until(() => task().phase !== "gating");
+  assert.equal(task().phase, "merged", task().note ?? "");
+  assert.equal(merged.length, 1);
+  assert.notEqual(branchHead(), headSha);
+  assert.equal(sh(repo, "log", "--format=%ae %ce %an %s", "main..kiln/issue-1"), `${noreply} ${noreply} t work`);
+  assert.equal(sh(repo, "rev-parse", "kiln/issue-1^{tree}"), sh(repo, "rev-parse", `${headSha}^{tree}`));
 });
