@@ -85,7 +85,7 @@ function Frame() {
   const [paceOpen, setPaceOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [board] = useApi<Board>(`/api/p/${pid}/board`, ["board", "task", "run"], 800);
-  const [envs] = useApi<EnvsView>(`/api/p/${pid}/envs`, ["deploy"], 2000);
+  const [envs] = useApi<EnvsView>(`/api/p/${pid}/envs`, ["deploy", "envs"], 2000);
   const connected = useConnected();
   const project = state.projects.find((p) => p.id === pid);
   const needs = board?.columns.needs.length ?? 0;

@@ -288,7 +288,7 @@ let es: EventSource | null = null;
 function connect() {
   if (es) return;
   es = new EventSource("/api/events");
-  const types = ["board", "task", "run", "run:event", "usage", "pace", "deploy", "chat", "toast", "tick"];
+  const types = ["board", "task", "run", "run:event", "usage", "pace", "deploy", "envs", "chat", "toast", "tick"];
   for (const t of types) {
     es.addEventListener(t, (m) => {
       const e = JSON.parse((m as MessageEvent).data);
@@ -296,7 +296,14 @@ function connect() {
       for (const l of listeners) l(ev);
     });
   }
-  es.onopen = () => setConn(true);
+  let opened = false;
+  es.onopen = () => {
+    setConn(true);
+    // A reopen means the daemon restarted (e.g. a self-update) or the link dropped: events were
+    // missed, so every view refetches.
+    if (opened) for (const l of listeners) l({ type: "reconnect", data: null });
+    opened = true;
+  };
   es.onerror = () => setConn(false);
 }
 
@@ -326,7 +333,8 @@ export function useBus(fn: Listener) {
 }
 
 /**
- * GET `path`, and refetch (debounced) whenever a bus event of one of `on` arrives.
+ * GET `path`, and refetch (debounced) whenever a bus event of one of `on` arrives, and after the
+ * event stream reconnects.
  * Returns [data, error, reload, setData].
  */
 export function useApi<T>(path: string | null, on: string[] = [], debounceMs = 400) {
@@ -345,7 +353,7 @@ export function useApi<T>(path: string | null, on: string[] = [], debounceMs = 4
     load();
   }, [load]);
   useBus((e) => {
-    if (!on.includes(e.type)) return;
+    if (e.type !== "reconnect" && !on.includes(e.type)) return;
     window.clearTimeout(timer.current);
     timer.current = window.setTimeout(load, debounceMs);
   });

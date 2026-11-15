@@ -6,7 +6,7 @@ const ENV_COLORS = ["var(--peach)", "var(--salmon)", "var(--lilac)", "var(--gold
 
 export function EnvsPage() {
   const { pid, act } = useApp();
-  const [v, err, reload, setV] = useApi<EnvsView>(`/api/p/${pid}/envs`, ["deploy"], 1500);
+  const [v, err, reload, setV] = useApi<EnvsView>(`/api/p/${pid}/envs`, ["deploy", "envs"], 1500);
   const [logs, setLogs] = useState<Record<number, string>>({});
   const [open, setOpen] = useState<number | null>(null);
   const [busy, setBusy] = useState<string | null>(null);

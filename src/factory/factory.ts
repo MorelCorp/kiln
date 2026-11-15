@@ -51,7 +51,7 @@ export interface LiveRun {
 }
 
 export interface BusEvent {
-  type: "board" | "task" | "run" | "run:event" | "usage" | "pace" | "deploy" | "chat" | "toast";
+  type: "board" | "task" | "run" | "run:event" | "usage" | "pace" | "deploy" | "envs" | "chat" | "toast";
   project?: string;
   data: unknown;
 }

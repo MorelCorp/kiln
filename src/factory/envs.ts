@@ -146,6 +146,8 @@ export async function probeEnvs(f: Factory, p: ProjectConfig, force = false): Pr
 
   const view: EnvsView = { main: { sha: mainSha, branch: mainBranch(p) }, envs, merged, checkedAt: new Date().toISOString() };
   cache.set(p.id, { at: Date.now(), view });
+  // Every open view (the header and the Environments page) refetches the fresh probe.
+  f.emit({ type: "envs", project: p.id, data: { checkedAt: view.checkedAt } });
   return view;
 }
 
