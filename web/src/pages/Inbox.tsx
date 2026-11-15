@@ -119,6 +119,7 @@ function TaskBody({ it, t }: { it: InboxItem; t: TaskRow }) {
             Rebase {g?.rebase === "pass" ? "✓" : g?.rebase === "fail" ? "✗" : "…"} ·{" "}
             {(g?.checks ?? []).map((c) => `${c.name} ${c.status === "pass" ? "✓" : c.status === "fail" ? "✗" : "…"}`).join(" · ") || "no checks"} ·{" "}
             <b>reviewer {g?.reviewer === "approve" ? "✓" : g?.reviewer === "pending" ? "…" : "✗"}</b>
+            {g?.ci ? ` · CI ${g.ci.status === "pass" ? "✓" : g.ci.status === "fail" ? "✗" : "…"}` : ""}
             {t.sendBacks ? ` · sent back ${t.sendBacks}×` : ""}
           </span>
           {t.note && <div style={{ color: "var(--peach)" }}><Md text={t.note} /></div>}

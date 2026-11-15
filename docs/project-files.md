@@ -41,6 +41,12 @@ maxSendBacks: 1
 # An agent producing no output for this long fails the run. Default 900.
 idleTimeoutSeconds: 900
 
+# GitHub projects: after opening the PR (and, for PRs that wait for you, after you approve), Kiln waits for
+# the PR's CI checks before merging. All pass, or none reported after a 30 s grace period: merge.
+# Any fails, or still pending after this many seconds: no merge, the task goes to "gate failed" with the
+# check names and links. A poll, so it holds no agent slot and uses no usage. Default 1200 (20 minutes).
+ciTimeoutSeconds: 1200
+
 # Optional. The sandbox has a private home, so package caches start empty on every run. Give it
 # read-only access to a host cache, and tell the tools where it is. `~` and $HOME are expanded.
 sandbox:

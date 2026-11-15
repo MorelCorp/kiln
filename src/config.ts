@@ -191,6 +191,8 @@ export interface ProjectRules {
   maxSendBacks: number;
   /** An agent producing no output for this long fails the run. */
   idleTimeoutSeconds: number;
+  /** GitHub projects: how long the gate waits for the PR's CI checks before merging. Default 1200. */
+  ciTimeoutSeconds: number;
   /** Paths (relative to the repo root) copied into each worktree before a run, e.g. node_modules. */
   copyToWorktree: string[];
   /** Extra things the sandbox may see: host paths (at the same path) and environment variables. */
@@ -239,6 +241,7 @@ export function loadRules(p: ProjectConfig): ProjectRules {
     checks: r.checks ?? [],
     maxSendBacks: r.maxSendBacks ?? 1,
     idleTimeoutSeconds: r.idleTimeoutSeconds ?? 900,
+    ciTimeoutSeconds: r.ciTimeoutSeconds ?? 1200,
     copyToWorktree: r.copyToWorktree ?? [],
     sandbox: {
       mounts: (r.sandbox?.mounts ?? []).map((m) => ({ ...m, path: expandHome(m.path) })),
