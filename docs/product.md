@@ -112,5 +112,8 @@ message an agent, stop a run) as buttons you confirm. It never merges or deploys
 - React + Vite + Tailwind. Home screen per project is a **pipeline board**:
   Triage → Ready → Running → Needs you → Merged → On staging → On prod, with "Needs you" highlighted.
   Side rail: pace, tokens, environment versions, chat.
+- Clicking a board card opens a read-only detail modal over the board (issue body, comments, Kiln's state,
+  log and PR link); Escape or × closes it and the board keeps its scroll. A GitHub icon in the top right of
+  each card and of the modal opens the issue in a new tab. "Needs you" cards still go to their action page.
 - Localhost only for now, but responsive and with room for auth so phone access (Tailscale) can come later.
 - The UI is validated as a wireframe artifact before it is coded.

@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { elapsed, fmtTok, money, post, TIER_LABEL, useApi, useNow, type Board, type Card, type Effort, type RunView, type TaskRow, type Tier } from "../api.ts";
+import { GithubLink, IssueModal } from "./IssueModal.tsx";
 import { EffortSeg, Loading, Pill, Tag, TierSeg, TONE, useApp } from "../ui.tsx";
 
 const COLS: { id: keyof Board["columns"]; label: string; color: string; tone: Parameters<typeof Tag>[0]["tone"] }[] = [
@@ -24,13 +25,19 @@ export function needHref(c: Card): string {
   }
 }
 
+type Open = (c: Card) => void;
+
 export function BoardPage({ board }: { board: Board | null }) {
+  // The modal lives here, over the board: the URL and the board's scroll position stay where they are.
+  const [opened, setOpened] = useState<Card | null>(null);
+  const close = useCallback(() => setOpened(null), []);
   if (!board) return <Loading />;
   return (
     <>
+      {opened && <IssueModal number={opened.number} title={opened.title} url={opened.url} onClose={close} />}
       <div className="board">
         <div style={{ display: "flex", gap: 10, alignItems: "flex-start", minWidth: "min-content" }}>
-          {COLS.map((c) => <Column key={c.id} col={c} cards={board.columns[c.id]} />)}
+          {COLS.map((c) => <Column key={c.id} col={c} cards={board.columns[c.id]} open={setOpened} />)}
         </div>
       </div>
       <div style={{ display: "flex", gap: 4, height: 10 }}>
@@ -42,7 +49,7 @@ export function BoardPage({ board }: { board: Board | null }) {
   );
 }
 
-function Column({ col, cards }: { col: (typeof COLS)[number]; cards: Card[] }) {
+function Column({ col, cards, open }: { col: (typeof COLS)[number]; cards: Card[]; open: Open }) {
   // Closed issues pile up in Prod: keep that one short, the board scrolls for the rest.
   const [all, setAll] = useState(false);
   const limit = col.id === "prod" ? 8 : Infinity;
@@ -58,7 +65,7 @@ function Column({ col, cards }: { col: (typeof COLS)[number]; cards: Card[] }) {
           {human > 0 && <span style={{ opacity: 0.6, marginLeft: 6 }}>+{human} human</span>}
         </span>
       </div>
-      {shown.map((c) => <BoardCard key={`${c.number}-${c.draftId ?? ""}-${c.testEnv ?? ""}`} c={c} col={col} />)}
+      {shown.map((c) => <BoardCard key={`${c.number}-${c.draftId ?? ""}-${c.testEnv ?? ""}`} c={c} col={col} open={open} />)}
       {cards.length > limit && (
         <button className="lbl" onClick={() => setAll((v) => !v)} style={{ color: col.color, textAlign: "right", background: "none", border: 0, padding: 4 }}>
           {all ? "show less" : `+${cards.length - limit} more`}
@@ -69,45 +76,51 @@ function Column({ col, cards }: { col: (typeof COLS)[number]; cards: Card[] }) {
   );
 }
 
-function BoardCard({ c, col }: { c: Card; col: (typeof COLS)[number] }) {
+/** The card's main target: a button that opens the modal, or a link where there is nothing to open. A ::after stretches it over the card. */
+function Opener({ c, open, href, children }: { c: Card; open: Open; href?: string; children: React.ReactNode }) {
+  if (href) return <a className="cardopen" href={href}>{children}</a>;
+  return <button type="button" className="cardopen" onClick={() => open(c)} aria-label={`Open #${c.number} ${c.title}`}>{children}</button>;
+}
+
+function BoardCard({ c, col, open }: { c: Card; col: (typeof COLS)[number]; open: Open }) {
   const { pid, act } = useApp();
   const [busy, setBusy] = useState(false);
   const [over, setOver] = useState(false);
   const color = col.color;
+  // Draft cards and cards without a task number have nothing to show in the modal: they keep their old targets.
+  const canOpen = !!c.number && !c.draftId;
   const head = (
     <span className="num" style={{ color }}>
       {c.number ? `#${c.number}` : "new"} {col.id === "running" && <span className="dot" style={{ background: color }} />}
     </span>
   );
   const tags = c.tags.length ? <span style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>{c.tags.map((t, i) => <Tag key={i} tone={t.tone}>{t.text}</Tag>)}</span> : null;
+  const gh = c.number && !c.draftId ? <GithubLink url={c.url} label={`Open #${c.number} on GitHub`} /> : null;
 
   if (col.id === "needs") {
+    // Needs-you cards go to where the action is (review, test, inbox), not to the modal.
     return (
-      <a href={needHref(c)} className="card" style={{ borderColor: "var(--red)" }}>
-        <Tag tone={c.needTone ?? "red"} style={{ alignSelf: "flex-start" }}>{c.need}</Tag>
-        <span>{c.number ? <b>#{c.number} </b> : null}{c.title}</span>
-      </a>
-    );
-  }
-  if (col.id === "running") {
-    return <a href={`#/task/${c.number}`} className="card">{head}{c.title}{tags}</a>;
-  }
-  if (col.id === "triage") {
-    return (
-      <div className="card">
-        {head}<a href={c.url} target="_blank" rel="noreferrer" style={{ color: "var(--ink)", textDecoration: "none" }}>{c.title}</a>{tags}
-        <Pill tone="lilac" sm busy={busy} style={{ alignSelf: "flex-start" }}
-          onClick={async () => (setBusy(true), await act(() => post(`/api/p/${pid}/tasks/${c.number}/triage`), `Draft for #${c.number} is in Needs you`), setBusy(false))}>
-          Draft with agent
-        </Pill>
+      <div className="card" style={{ borderColor: "var(--red)" }}>
+        <Opener c={c} open={open} href={needHref(c)}>
+          <Tag tone={c.needTone ?? "red"} style={{ alignSelf: "flex-start" }}>{c.need}</Tag>
+          <span>{c.number ? <b>#{c.number} </b> : null}{c.title}</span>
+        </Opener>
+        {gh}
       </div>
     );
   }
-  if (col.id === "ready") {
+  if (col.id === "triage" || col.id === "ready") {
     return (
-      <div className="card" style={{ position: "relative" }}>
-        {head}<a href={c.url} target="_blank" rel="noreferrer" style={{ color: "var(--ink)", textDecoration: "none" }}>{c.title}</a>{tags}
-        {!c.human && (
+      <div className="card">
+        <Opener c={c} open={open} href={canOpen ? undefined : c.url}>{head}{c.title}{tags}</Opener>
+        {gh}
+        {col.id === "triage" && (
+          <Pill tone="lilac" sm busy={busy} style={{ alignSelf: "flex-start" }}
+            onClick={async () => (setBusy(true), await act(() => post(`/api/p/${pid}/tasks/${c.number}/triage`), `Draft for #${c.number} is in Needs you`), setBusy(false))}>
+            Draft with agent
+          </Pill>
+        )}
+        {col.id === "ready" && !c.human && (
           <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
             <Pill tone="gold" sm busy={busy} onClick={async () => (setBusy(true), await act(() => post(`/api/p/${pid}/tasks/${c.number}/start`), `#${c.number} started`), setBusy(false))}>Run now</Pill>
             <Pill tone="dim" sm onClick={() => setOver((v) => !v)} ariaLabel="Override model and effort" style={{ color: c.override ? "var(--orange)" : "var(--gold)" }}>
@@ -115,14 +128,15 @@ function BoardCard({ c, col }: { c: Card; col: (typeof COLS)[number] }) {
             </Pill>
           </div>
         )}
-        {over && <OverridePop number={c.number} onClose={() => setOver(false)} />}
+        {col.id === "ready" && over && <OverridePop number={c.number} onClose={() => setOver(false)} />}
       </div>
     );
   }
   return (
-    <a href={c.number ? `#/task/${c.number}` : c.url} className="card">
-      {head}{c.title}{tags}
-    </a>
+    <div className="card">
+      <Opener c={c} open={open} href={canOpen ? undefined : c.number ? `#/task/${c.number}` : c.url}>{head}{c.title}{tags}</Opener>
+      {gh}
+    </div>
   );
 }
 

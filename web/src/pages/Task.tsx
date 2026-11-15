@@ -5,13 +5,13 @@ import {
 } from "../api.ts";
 import { EffortSeg, Loading, Md, PageTitle, Pill, Sec, Tag, TierSeg, useApp } from "../ui.tsx";
 
-const KCOLOR: Record<string, string> = {
+export const KCOLOR: Record<string, string> = {
   read: "var(--sky)", think: "var(--lavender)", sub: "var(--lilac)", edit: "var(--gold)", bash: "var(--peach)",
   fail: "var(--red)", error: "var(--red)", search: "var(--sky)", tool: "var(--peach)", progress: "var(--lavender)",
   result: "var(--orange)", kiln: "var(--orange)",
 };
 
-const PHASE_LABEL: Record<string, string> = {
+export const PHASE_LABEL: Record<string, string> = {
   idle: "not started", planning: "planning", plan_review: "plan waits for you", implementing: "implementing",
   question: "question for you", gating: "merge gate", pr_review: "PR waits for you", gate_failed: "gate failed",
   failed: "failed", usage_paused: "usage paused", interrupted: "interrupted", stopped: "stopped", merged: "merged", human: "human", dropped: "dropped",
