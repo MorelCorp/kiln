@@ -1,0 +1,62 @@
+# ---------------------------------------------------------------------------
+# PUBLIC REPO. Real configuration lives in $KILN_HOME (~/.config/kiln), never here.
+# These rules are a second line of defence in case something lands in the checkout.
+# ---------------------------------------------------------------------------
+
+# Dependencies and builds
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+.vite/
+
+# Secrets and env files (only .env.example is allowed)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+id_rsa*
+id_ed25519*
+*.kubeconfig
+kubeconfig*
+credentials*.json
+*secret*
+!**/*secret*.md
+*.token
+
+# Local Kiln config / state, if ever pointed inside the checkout
+kiln.config.json
+config.local.*
+local/
+.kiln-home/
+state/
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Sandcastle and agent runtime output
+.sandcastle/logs/
+.sandcastle/worktrees/
+.sandcastle/.env
+runs/
+logs/
+*.log
+*.jsonl
+
+# Claude Code local files
+.claude/settings.local.json
+.claude/projects/
+CLAUDE.local.md
+
+# Editors / OS
+.vscode/
+.idea/
+*.code-workspace
+.DS_Store
+Thumbs.db

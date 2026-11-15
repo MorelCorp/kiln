@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Kiln is a public repo: block secrets and private terms before they are committed.
+exec "$(git rev-parse --show-toplevel)/scripts/check-private.sh" --staged

@@ -1,0 +1,41 @@
+{
+  "port": 7420,
+  "activeProject": "webapp",
+  "pace": {
+    "paused": true,
+    "maxConcurrentAgents": 2,
+    "modelCeiling": "medium",
+    "effortCeiling": "high",
+    "tokenBudget": 0,
+    "tokenWindowHours": 5
+  },
+  "providers": [
+    {
+      "id": "claude-sub",
+      "kind": "claude-code",
+      "tokenEnv": "CLAUDE_CODE_OAUTH_TOKEN",
+      "models": {
+        "small": "claude-haiku-5-5",
+        "medium": "claude-sonnet-5-5",
+        "large": "claude-opus-5-5"
+      }
+    }
+  ],
+  "projects": [
+    {
+      "id": "webapp",
+      "name": "Acme Webapp",
+      "path": "/home/you/src/webapp",
+      "repo": "acme/webapp",
+      "provider": "claude-sub",
+      "labels": {
+        "triage": ["needs-triage", "needs-info", "idea"],
+        "ready": "ready-for-agent",
+        "human": "ready-for-human",
+        "running": "kiln:running",
+        "modelPrefix": "model:",
+        "priority": ["priority:next", "priority:later"]
+      }
+    }
+  ]
+}
