@@ -13,7 +13,7 @@ import {
   Ledger, type ChecklistItem, type Phase, type RunKind, type RunRow, type TaskRow, type UsageSnapshot,
 } from "../state/db.ts";
 import { git, sourceFor, type IssueDetail, type Source } from "../tasks/source.ts";
-import { classify, type Task } from "../tasks/board.ts";
+import { classify, labelsToClearOnPhase, type Task } from "../tasks/board.ts";
 import {
   StreamParser, extractJsonTag, extractTag, type ProgressItem, type RateLimitInfo, type RunEvent, type Usage,
 } from "../runs/stream.ts";
@@ -516,7 +516,7 @@ export class Factory {
     this.emitTask(row);
     if (["merged", "human", "dropped"].includes(phase)) {
       const p = this.project(t.project);
-      void this.source(p).editLabels(t.number, [], [p.labels.running]).catch(() => undefined);
+      void this.source(p).editLabels(t.number, [], labelsToClearOnPhase(phase, p)).catch(() => undefined);
       this.syncBoard(t.project, true).catch(() => undefined);
     }
     return row;
