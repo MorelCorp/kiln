@@ -137,6 +137,17 @@ button:disabled {
 .side a:hover, .side button.navbtn:hover { filter: brightness(1.15); color: #000 }
 .side a.cur { box-shadow: inset 6px 0 0 #000 }
 
+/* Frame: header and rail fixed, only <main> scrolls. A very short window falls back to page scroll. */
+.frame { height: 100vh; height: 100dvh; padding: 10px; box-sizing: border-box; display: flex; flex-direction: column; gap: 6px; overflow: hidden }
+.frame-body { position: relative; display: flex; flex: 1; min-height: 0 }
+.frame-main { min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain }
+.frame-main > * { flex-shrink: 0 }
+@media (max-height: 560px) {
+  .frame { height: auto; min-height: 100vh; overflow: visible }
+  .frame-body { min-height: 600px }
+  .frame-main { overflow: visible }
+}
+
 /* Board */
 /* The board scrolls inside its own frame (both ways) so the agents strip below always shows. */
 .board {

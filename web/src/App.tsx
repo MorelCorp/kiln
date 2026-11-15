@@ -90,9 +90,11 @@ function Frame() {
   const project = state.projects.find((p) => p.id === pid);
   const needs = board?.columns.needs.length ?? 0;
 
+  const mainRef = useRef<HTMLElement>(null);
   useEffect(() => {
     setPaceOpen(false);
     setChatOpen(false);
+    mainRef.current?.scrollTo({ top: 0 });
   }, [route.join("/")]);
 
   // N opens New task (when not typing).
@@ -137,9 +139,9 @@ function Frame() {
   const navCur = page === "task" ? "runs" : page === "review" || page === "test" ? "inbox" : page;
 
   return (
-    <div style={{ minHeight: "100vh", padding: 10, boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 6 }}>
+    <div className="frame">
       {/* Header elbow */}
-      <header style={{ position: "relative", background: "var(--lilac)", borderRadius: "0 0 0 64px", minHeight: 150 }}>
+      <header style={{ position: "relative", background: "var(--lilac)", borderRadius: "0 0 0 64px", minHeight: 150, flexShrink: 0 }}>
         <div style={{ position: "absolute", left: "var(--rail)", right: 0, top: 0, bottom: 16, background: "#000", borderRadius: "0 0 0 34px", padding: "0 0 10px 24px", display: "flex", flexWrap: "wrap", alignItems: "flex-end", justifyContent: "space-between", gap: 12, overflow: "hidden" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 14, letterSpacing: ".08em", color: "var(--gold)", textTransform: "uppercase", minWidth: 0 }}>
             <a href="#/envs" style={{ display: "flex", flexWrap: "wrap", gap: "6px 22px", color: "var(--gold)", textDecoration: "none" }}>
@@ -180,9 +182,9 @@ function Frame() {
         </div>
       </header>
 
-      {/* Body elbow */}
-      <div style={{ position: "relative", display: "flex", flex: 1, minHeight: 600 }}>
-        <nav className="side" aria-label="Main" style={{ flex: "0 0 var(--rail)", display: "flex", flexDirection: "column", gap: 4 }}>
+      {/* Body elbow: the header and the rail stay put; only <main> scrolls (see .frame in theme.css). */}
+      <div className="frame-body">
+        <nav className="side" aria-label="Main" style={{ flex: "0 0 var(--rail)", display: "flex", flexDirection: "column", gap: 4, minHeight: 0 }}>
           <div style={{ background: "var(--salmon)", height: 44, borderRadius: "64px 0 0 0" }} />
           {nav.map((n) => (
             <a key={n.id} href={`#/${n.id}`} className={navCur === n.id ? "cur" : ""} aria-current={navCur === n.id ? "page" : undefined}
@@ -190,8 +192,8 @@ function Frame() {
               {n.label}
             </a>
           ))}
-          <div style={{ background: "var(--salmon)", flex: 1, minHeight: 80 }} />
-          {/* Sticks to the bottom of the viewport so Pace and Chat stay reachable on long pages. */}
+          <div style={{ background: "var(--salmon)", flex: 1, minHeight: 8 }} />
+          {/* Sticky only matters in the short-window fallback, where the whole page scrolls. */}
           <div style={{ position: "sticky", bottom: 10, display: "flex", flexDirection: "column", gap: 4, background: "#000", paddingTop: 4, marginTop: -4 }}>
             <button className="navbtn" onClick={() => (setPaceOpen((v) => !v), setChatOpen(false))} aria-expanded={paceOpen} style={{ background: "var(--peach)", minHeight: 52 }}>
               Pace {paceOpen ? "▾" : "▸"}
@@ -202,14 +204,14 @@ function Frame() {
             <div style={{ background: "var(--gold)", height: 24 }} />
           </div>
         </nav>
-        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
-          <div style={{ display: "flex", gap: 4, height: 16 }}>
+        <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column" }}>
+          <div style={{ display: "flex", gap: 4, height: 16, flexShrink: 0 }}>
             <div style={{ flex: 3, background: "var(--salmon)" }} /><div style={{ flex: "0 0 22px", background: "var(--orange)" }} />
             <div style={{ flex: 2, background: "var(--lilac)" }} /><div style={{ flex: 4, background: "var(--lavender)" }} />
           </div>
-          <div style={{ position: "relative", flex: 1, display: "flex" }}>
+          <div style={{ position: "relative", flex: 1, minHeight: 0, display: "flex" }}>
             <div style={{ position: "absolute", left: 0, top: 0, width: 34, height: 34, background: "var(--salmon)" }} />
-            <main style={{ position: "relative", flex: 1, minWidth: 0, background: "#000", borderRadius: "34px 0 0 0", padding: "18px 4px 24px 22px", display: "flex", flexDirection: "column", gap: 16 }}>
+            <main ref={mainRef} className="frame-main" style={{ position: "relative", flex: 1, minWidth: 0, background: "#000", borderRadius: "34px 0 0 0", padding: "18px 4px 24px 22px", display: "flex", flexDirection: "column", gap: 16 }}>
               <ErrorBoundary inline key={route.join("/")}>{body}</ErrorBoundary>
             </main>
           </div>
