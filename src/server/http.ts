@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
@@ -242,6 +243,9 @@ async function readBody(req: IncomingMessage): Promise<unknown> {
   return s ? JSON.parse(s) : {};
 }
 
+/** Changes every time the daemon starts: a page that sees a new one reloads (new code, fresh state). */
+const BOOT_ID = randomUUID();
+
 export function startServer(f: Factory, port: number) {
   const clients = new Set<ServerResponse>();
   f.bus.on("event", (e: BusEvent) => {
@@ -268,7 +272,7 @@ export function startServer(f: Factory, port: number) {
     const url = new URL(req.url ?? "/", "http://x");
     if (url.pathname === "/api/events") {
       res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
-      res.write(": hi\n\n");
+      res.write(`event: hello\ndata: ${JSON.stringify({ boot: BOOT_ID })}\n\n`);
       clients.add(res);
       req.on("close", () => clients.delete(res));
       return;
