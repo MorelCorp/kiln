@@ -28,8 +28,42 @@ cp examples/kiln.config.example.json ~/.config/kiln/config.json   # then edit
 cp .env.example ~/.config/kiln/.env                               # then add your token
 claude setup-token                                                # paste into ~/.config/kiln/.env
 
-npm run kiln -- tasks
+npm run build:web
+npm start                     # daemon + command center on http://127.0.0.1:7420
 ```
+
+Other commands:
+
+```bash
+npm run kiln -- run <project> <issue>   # one task by hand in the foreground (Ctrl-C aborts, worktree kept)
+npm run kiln -- tasks [project]         # print a project's board
+npm run dev:web                         # Vite dev server for the UI (proxies the API)
+```
+
+Per-project settings (agent prompt, merge-gate checks, risky paths, environments and deploy scripts)
+live in the project's own `.kiln/` folder: see [docs/project-files.md](docs/project-files.md).
+
+## Running it for real
+
+Run the daemon from a dedicated clone, not the checkout you develop in (an edit or branch switch there
+would change the code the daemon runs):
+
+```bash
+git clone https://github.com/<you>/kiln.git ~/kiln-deploy && cd ~/kiln-deploy
+npm ci && npm run build:web
+scripts/install-service.sh        # systemd user service, logs: journalctl --user -u kiln -f
+```
+
+## Kiln improves Kiln
+
+Kiln is always one of its own projects: the project "kiln" points at the clone it runs from and at that
+clone's GitHub `origin`, so a fork works on the fork. File issues on your Kiln repo, label them
+`ready-for-agent`, and Kiln works them through its own gate (`.kiln/rules.yaml`: typecheck, tests, web
+build, privacy scan). Its Environments page then updates and restarts the running Kiln. Set
+`"self": false` in `config.json` to turn this off.
+
+To try Kiln without touching GitHub, add a project with `"source": "local"` pointing at a scratch git
+repo, then `npm run kiln -- local add <project> "<title>" "<body>"` to create issues.
 
 Set `KILN_HOME` to use another config directory. Your configuration never lives in this repo.
 

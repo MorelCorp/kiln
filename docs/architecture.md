@@ -76,13 +76,39 @@ Extra usage is refused by default: see [product.md](product.md#usage-allowance-a
 
 ### Seeing, stopping and redirecting agents
 
-- **See:** `onAgentStreamEvent` (text, tool calls) is pushed over SSE to the UI and appended
-  to `~/.local/state/kiln/runs/<id>.jsonl`.
+- **See:** sandcastle's `onAgentStreamEvent` forwards every raw stream-json line. Kiln parses them
+  (`src/runs/stream.ts`) into activity events, TodoWrite progress, subagents, per-call usage and
+  `rate_limit_event`s, pushes them over SSE and appends them to `~/.local/state/kiln/runs/<id>.jsonl`.
 - **Stop:** each run has its own `AbortController`. Aborting kills the agent process and
   keeps the worktree, so the work can be inspected or resumed.
 - **Redirect:** abort the run, then start a new run with
-  `resumeSession: <captured session id>` and your message as the prompt, on the same branch.
+  `resumeSession: <session id>` and your message as the prompt, on the same branch.
   The agent keeps its whole conversation and receives your instruction as the next turn.
+- **Session store:** the sandboxed CLI runs with `CLAUDE_CONFIG_DIR=~/.local/state/kiln/claude/<provider>`,
+  bind-mounted into bwrap, so transcripts are written to the host as the agent works. Sandcastle only
+  copies a transcript out of the sandbox's private home when a run *ends*; without this an aborted
+  session (redirect, override, extra-usage stop) could not be resumed. Before resuming, the provider
+  moves the transcript from the worktree path to the repo path where sandcastle looks for it. If a
+  session is gone anyway, Kiln starts a fresh session on the same branch with the message.
+
+### Agent protocol
+
+Agents end their final message with one tagged block, which the loop parses (no model involved):
+`<kiln-done>{summary, checklist}</kiln-done>`, `<kiln-question>…</kiln-question>`,
+`<kiln-plan>…</kiln-plan>` (risky tasks, plan first) or, for the reviewer,
+`<kiln-review>{verdict, notes}</kiln-review>`. The protocol is restated on every resumed turn, because
+a resumed session may never have seen it (a planning session resumed to implement). Human decisions
+(answers, plan approvals, redirects) are kept on the task and given to the reviewer, which otherwise
+only sees the issue text.
+
+### Merge gate
+
+Run by Kiln after `<kiln-done>`: (0) the branch has commits, (1) rebase on the current main on the
+host with hooks disabled, (2) the project's checks inside the sandbox, (3) path rules (can only make
+the task stricter), (4) a reviewer agent in a fresh session on the same worktree (any change it makes
+is reset). Then Kiln pushes and opens the PR; simple tasks are squash-merged, risky ones wait for your
+review. Approving a PR re-runs steps 1-2 against the current main first, so a merge never lands on a
+stale branch; a conflict sends the task back to its agent.
 
 ### Chat
 
@@ -97,9 +123,26 @@ the factory state. It does not edit code; work goes through issues and runs.
 - `gh` CLI for GitHub, using your existing login.
 - Web UI: Vite + React, served by the daemon on `127.0.0.1` only.
 
+## Code map
+
+| Path | What |
+|---|---|
+| `src/cli.ts` | `kiln daemon`, `kiln run`, `kiln tasks`, `kiln local add` |
+| `src/factory/factory.ts` | Runs, task state machine, pace, usage guard, scheduler loop |
+| `src/factory/gate.ts` | Merge gate |
+| `src/factory/envs.ts` | Version probes, merged PRs per environment, deploys |
+| `src/factory/assist.ts` | Read-only host agents: triage, quick capture, chat, usage probe |
+| `src/runs/stream.ts`, `prompts.ts` | Stream parser and the agent protocol / prompts |
+| `src/tasks/source.ts`, `board.ts` | Issues and PRs (GitHub via `gh`, or local), board classification |
+| `src/state/db.ts` | SQLite ledger |
+| `src/server/` | HTTP + SSE API and view models |
+| `web/` | Command center (React + Vite + Tailwind) |
+| `.kiln/` | Kiln's own project files (Kiln works on itself) |
+| `scripts/install-service.sh`, `deploy-self.sh` | systemd user service; update-and-restart from a deploy clone |
+
+Per-project files (`.kiln/prompt.md`, `rules.yaml`, `envs.yaml`): see [project-files.md](project-files.md).
+
 ## Open questions
 
 - **Worktree vs container:** start with `bwrap()` + worktree (light, uses host tools).
   Move to `docker()` per project if an agent needs services (Postgres, k8s) the host should not share.
-- **Merging:** agents push their branch and open a PR. Kiln never merges to `main` by itself.
-- **Per-project agent prompt:** read from `<project>/.kiln/prompt.md` if present, otherwise Kiln's default.

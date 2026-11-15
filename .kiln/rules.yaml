@@ -1,0 +1,30 @@
+# Merge gate for Kiln working on itself. See docs/project-files.md.
+
+riskyPaths:
+  - ".kiln/**"                    # an agent must not loosen its own gate
+  - ".githooks/**"
+  - ".github/**"
+  - "scripts/**"
+  - "src/providers/**"            # subscription-only and API-key rules live here
+  - "src/server/http.ts"          # localhost-only guard
+  - "LICENSE"
+
+copyToWorktree:
+  - node_modules
+
+checks:
+  - name: typecheck
+    run: npm run typecheck
+  - name: tests
+    run: npm test
+  - name: web build
+    run: npm run build:web
+  - name: privacy
+    run: bash scripts/check-private.sh --all
+
+sandbox:
+  mounts:
+    # The privacy check and the pre-commit hook need the private-terms list (read-only).
+    - path: $KILN_HOME/private-terms.txt
+  env:
+    KILN_HOME: $KILN_HOME

@@ -4,6 +4,8 @@
  * added without touching the loop.
  */
 
+import type { RunEvent, StreamSink, Usage } from "../runs/stream.ts";
+
 /** Relative size of a model, used for the pace's ceiling. Providers map tiers to real model ids. */
 export type ModelTier = "small" | "medium" | "large";
 export const TIER_ORDER: ModelTier[] = ["small", "medium", "large"];
@@ -32,6 +34,32 @@ export interface ModelProvider {
    * the run manager passes it straight to `run({ agent })`.
    */
   agent(tier: ModelTier, effort: Effort): unknown;
+  /** Make `sessionId` resumable for a run in `worktreePath` of `repoPath`. False if the session is gone. */
+  prepareResume(sessionId: string, repoPath: string, worktreePath: string): Promise<boolean>;
+  /** Host paths the sandbox must see read-write at the same path (e.g. the CLI's session store). */
+  sandboxMounts(): { hostPath: string; sandboxPath: string }[];
+  /** A read-only one-shot on the host (chat, triage, quick capture). Never edits files. */
+  ask(opts: HostAskOptions): Promise<HostAskResult>;
+}
+
+export interface HostAskOptions {
+  cwd: string;
+  prompt: string;
+  tier: ModelTier;
+  effort: Effort;
+  resume?: string;
+  appendSystemPrompt?: string;
+  timeoutSeconds?: number;
+  signal?: AbortSignal;
+  sink?: Partial<StreamSink> & { event(e: RunEvent): void };
+}
+
+export interface HostAskResult {
+  text: string;
+  costUsd: number;
+  usage: Usage;
+  sessionId?: string;
+  isError: boolean;
 }
 
 export function clampTier(wanted: ModelTier, ceiling: ModelTier): ModelTier {
