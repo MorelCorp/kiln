@@ -319,12 +319,15 @@ function ChatPopup({ open, onClose }: { open: boolean; onClose: () => void }) {
                     a.status ? (
                       <span key={a.id} className="tag" style={{ background: "var(--chip)", color: a.status === "done" ? "var(--sky)" : "var(--muted)" }}>{a.label} · {a.status}</span>
                     ) : (
-                      <span key={a.id} style={{ display: "inline-flex", gap: 2 }}>
-                        <Pill tone="lilac" sm onClick={() => {
+                      <span key={a.id} style={{ display: "inline-flex", flexWrap: "wrap", gap: 2, maxWidth: "100%" }}>
+                        <Pill tone={a.kind === "close_issue" ? "red" : "lilac"} sm title={a.kind === "close_issue" && a.args.comment ? `Comment: ${String(a.args.comment)}` : undefined} onClick={() => {
                           if (a.kind === "open") { go(String(a.args.path ?? "/board").replace(/^\/tasks\//, "/task/")); onClose(); }
                           void act(() => post(`/api/p/${pid}/chat/actions/${a.id}`));
                         }}>{a.label}</Pill>
                         <Pill tone="dim" sm ariaLabel={`Dismiss ${a.label}`} onClick={() => act(() => post(`/api/p/${pid}/chat/actions/${a.id}`, { dismiss: true }))}>×</Pill>
+                        {a.kind === "close_issue" && !!a.args.comment && (
+                          <span className="lbl" style={{ color: "var(--muted)", alignSelf: "center", textTransform: "none" }}>“{String(a.args.comment)}”</span>
+                        )}
                       </span>
                     ),
                   )}

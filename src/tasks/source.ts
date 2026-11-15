@@ -47,13 +47,16 @@ export interface PrChecks {
  * "local" keeps issues in the ledger and merges branches into the local main, for trying
  * Kiln on a scratch repo.
  */
+/** GitHub's close reasons: done, or will not be done. */
+export type CloseReason = "completed" | "not planned";
+
 export interface Source {
   listIssues(recentClosed?: number): Promise<Issue[]>;
   getIssue(n: number): Promise<IssueDetail>;
   editLabels(n: number, add: string[], remove: string[]): Promise<void>;
   comment(n: number, body: string): Promise<void>;
   createIssue(i: { title: string; body: string; labels: string[] }): Promise<Issue>;
-  closeIssue(n: number, comment?: string): Promise<void>;
+  closeIssue(n: number, comment?: string, reason?: CloseReason): Promise<void>;
   /** Push a branch from a worktree (host side, with your credentials). */
   pushBranch(worktree: string, branch: string, force?: boolean): Promise<void>;
   findPr(branch: string): Promise<PullRequest | undefined>;
@@ -174,9 +177,9 @@ export class GitHubSource implements Source {
     return { number, title: i.title, url, state: "OPEN" as const, closedAt: null, labels: i.labels };
   }
 
-  async closeIssue(n: number, comment?: string) {
+  async closeIssue(n: number, comment?: string, reason: CloseReason = "completed") {
     if (comment) await this.comment(n, comment);
-    await this.gh(["issue", "close", String(n), "-R", this.p.repo]);
+    await this.gh(["issue", "close", String(n), "-R", this.p.repo, "--reason", reason]);
   }
 
   async pushBranch(worktree: string, branch: string, force = false) {

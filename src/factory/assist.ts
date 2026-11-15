@@ -194,6 +194,12 @@ export async function runChatAction(f: Factory, p: ProjectConfig, actionId: stri
           await f.source(p).editLabels(Number(g.number), g.add ?? [], g.remove ?? []);
           await f.syncBoard(p.id, true);
           break;
+        case "close_issue": {
+          const n = Number(g.number);
+          if (!Number.isInteger(n) || n <= 0) throw new Error(`Bad issue number ${String(g.number)}`);
+          await f.closeIssue(p.id, n, g.comment ? String(g.comment) : undefined, g.reason === "not planned" ? "not planned" : "completed");
+          break;
+        }
         case "pace":
           f.setPace(g);
           break;

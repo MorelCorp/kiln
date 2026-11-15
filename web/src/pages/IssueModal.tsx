@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
-import { elapsed, useApi, type IssueThread } from "../api.ts";
+import { useEffect, useRef, useState } from "react";
+import { elapsed, post, useApi, type IssueThread } from "../api.ts";
 import { Loading, Md, Pill, Sec, Tag, useApp } from "../ui.tsx";
 import { KCOLOR, PHASE_LABEL } from "./Task.tsx";
 
@@ -15,10 +15,58 @@ export function GithubLink({ url, label, style }: { url: string; label: string; 
   );
 }
 
-/** Issue detail over the board: body, comments, Kiln's task state, log and PR. Read-only; the board stays mounted underneath. */
+type CloseReason = "completed" | "not planned";
+
+/** "Close issue" under the description: opens a box for a closing comment and GitHub's close reason. */
+function CloseIssue({ number, live, onClosed }: { number: number; live: boolean; onClosed: () => void }) {
+  const { pid, act } = useApp();
+  const [open, setOpen] = useState(false);
+  const [comment, setComment] = useState("");
+  const [reason, setReason] = useState<CloseReason>("completed");
+  const [busy, setBusy] = useState(false);
+  const ta = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    if (open) ta.current?.focus();
+  }, [open]);
+
+  if (!open) {
+    return <Pill tone="red" sm onClick={() => setOpen(true)} style={{ alignSelf: "flex-start" }}>Close issue</Pill>;
+  }
+  const submit = async () => {
+    setBusy(true);
+    const r = await act(() => post(`/api/p/${pid}/tasks/${number}/close`, { comment, reason }), `#${number} closed`);
+    setBusy(false);
+    if (r !== undefined) {
+      setOpen(false);
+      setComment("");
+      onClosed();
+    }
+  };
+  return (
+    <div role="group" aria-label={`Close issue #${number}`} style={{ display: "flex", flexDirection: "column", gap: 8, borderLeft: "6px solid var(--red)", padding: "8px 10px", background: "var(--panel)", borderRadius: "0 12px 12px 0" }}>
+      <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <span className="lbl" style={{ color: "var(--redsoft)" }}>Closing comment · optional, posted on the issue</span>
+        <textarea ref={ta} className="ta" rows={3} value={comment} onChange={(e) => setComment(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && (e.metaKey || e.ctrlKey) && void submit()} placeholder="Why is it closed?" />
+      </label>
+      <div className="seg" role="radiogroup" aria-label="Close reason" style={{ alignSelf: "flex-start" }}>
+        {(["completed", "not planned"] as const).map((r) => (
+          <button key={r} type="button" role="radio" aria-checked={reason === r} className={reason === r ? "on" : ""} style={{ padding: "6px 14px" }} onClick={() => setReason(r)}>{r}</button>
+        ))}
+      </div>
+      {live && <span className="lbl" style={{ color: "var(--redsoft)" }}>An agent is working on it: closing stops the run.</span>}
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <Pill tone="red" busy={busy} onClick={submit}>Close issue</Pill>
+        <Pill tone="dim" onClick={() => setOpen(false)} disabled={busy}>Cancel</Pill>
+      </div>
+    </div>
+  );
+}
+
+/** Issue detail over the board: body, comments, Kiln's task state, log and PR. The board stays mounted underneath. */
 export function IssueModal({ number, title, url, onClose }: { number: number; title: string; url: string; onClose: () => void }) {
   const { pid } = useApp();
-  const [d, err] = useApi<IssueThread>(`/api/p/${pid}/tasks/${number}/thread`, ["task", "run"], 700);
+  const [d, err, reload] = useApi<IssueThread>(`/api/p/${pid}/tasks/${number}/thread`, ["task", "run", "board"], 700);
   const box = useRef<HTMLDivElement>(null);
 
   // Escape closes; focus moves into the dialog and returns to the card that opened it.
@@ -81,6 +129,7 @@ export function IssueModal({ number, title, url, onClose }: { number: number; ti
               <section aria-label="Issue body" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <Sec tone="orange">Issue</Sec>
                 <Md text={d.issue.body || "(no description)"} />
+                {d.issue.state !== "CLOSED" && <CloseIssue number={number} live={live} onClosed={reload} />}
               </section>
               <section aria-label="Comments" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <Sec tone="lavender">Comments · {d.issue.comments.length}</Sec>
