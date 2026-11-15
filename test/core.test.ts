@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { StreamParser, extractJsonTag, extractTag, type RunEvent, type Usage } from "../src/runs/stream.ts";
 import { globToRegExp, riskyMatches } from "../src/factory/gate.ts";
-import { classify } from "../src/tasks/board.ts";
+import { classify, labelsToClearOnPhase } from "../src/tasks/board.ts";
 import { clampEffort, clampTier } from "../src/providers/types.ts";
 import { repoFromRemote, type ProjectConfig } from "../src/config.ts";
 
@@ -95,4 +95,10 @@ test("stream parser: tools, progress, subagents, rate limit, result", () => {
   assert.equal(events[2].sub, "explore");
   assert.equal(events.at(-1)!.text, "finished", "final text is not repeated");
   assert.equal((seen.result as { costUsd: number }).costUsd, 0.5);
+});
+
+test("a merged task drops the ready and running labels; other terminal phases only running", () => {
+  assert.deepEqual(labelsToClearOnPhase("merged", project), ["ready-for-agent", "kiln:running"]);
+  assert.deepEqual(labelsToClearOnPhase("human", project), ["kiln:running"]);
+  assert.deepEqual(labelsToClearOnPhase("dropped", project), ["kiln:running"]);
 });
