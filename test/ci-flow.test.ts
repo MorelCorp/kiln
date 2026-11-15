@@ -38,20 +38,20 @@ import type { PrChecks, PullRequest, Source } from "../src/tasks/source.ts";
 
 const pr: PullRequest = { number: 5, url: "https://github.com/acme/webapp/pull/5", headRefName: "kiln/issue-1", state: "OPEN", mergedAt: null, mergeCommit: null, title: "t" };
 
-function setup(prChecks: () => Promise<PrChecks>, commitEmail: string | null = null) {
+function setup(prChecks: () => Promise<PrChecks>, opts: { findPr?: () => Promise<PullRequest>; phase?: string; commitEmail?: string } = {}) {
   const f = new Factory();
   f.ciTiming = { pollMs: 5, graceMs: 0 };
   const merged: string[] = [];
   const fake = {
-    fetch: async () => {}, baseRef: () => "main", findPr: async () => pr, pushBranch: async () => {},
+    fetch: async () => {}, baseRef: () => "main", findPr: opts.findPr ?? (async () => pr), pushBranch: async () => {},
     getIssue: async () => ({ number: 1, title: "t", url: "u", state: "OPEN", closedAt: null, labels: [], body: "", comments: [] }),
     editLabels: async () => {}, listIssues: async () => [], editPrBody: async () => {}, closeIssue: async () => {},
-    prChecks, mergePr: async () => (merged.push("x"), "deadbeefcafe"), commitEmail: async () => commitEmail,
+    prChecks, mergePr: async () => (merged.push("x"), "deadbeefcafe"), commitEmail: async () => opts.commitEmail ?? null,
   } as unknown as Source;
   (f as unknown as { source: () => Source }).source = () => fake;
   const number = 1;
   f.ledger.createTask({
-    project: "webapp", number, title: "t", phase: "pr_review", risk: "required", riskReason: "risk label", branch: "kiln/issue-1",
+    project: "webapp", number, title: "t", phase: (opts.phase ?? "pr_review") as "pr_review", risk: "required", riskReason: "risk label", branch: "kiln/issue-1",
     worktree: null, sessionId: null, prNumber: 5, prUrl: pr.url, plan: null, question: null, checklist: null, gate: null,
     overrideModel: null, overrideEffort: null, allowExtra: false, sendBacks: 0, queuedMessage: null, note: null, mergedSha: null, mergedAt: null,
   });
@@ -110,11 +110,52 @@ test("Stop and Drop interrupt the CI wait without merging", async () => {
   }
 });
 
+// ---- merged outside Kiln (on GitHub) --------------------------------------------------
+
+const mergedOnGitHub: PullRequest = { ...pr, state: "MERGED", mergedAt: "2030-01-01T00:00:00Z", mergeCommit: "feedface0001" };
+const noChecks = async (): Promise<PrChecks> => ({ head: headSha, checks: [] });
+
+test("approvePr on a PR already merged on GitHub marks the task merged without merging again", async () => {
+  const { f, merged, task } = setup(noChecks, { findPr: async () => mergedOnGitHub });
+  await f.approvePr("webapp", 1);
+  assert.equal(task().phase, "merged");
+  assert.equal(task().mergedSha, "feedface0001");
+  assert.equal(merged.length, 0);
+});
+
+test("the gate finds a PR merged on GitHub and stops there instead of sending the task back", async () => {
+  const { f, merged, task } = setup(noChecks, { findPr: async () => mergedOnGitHub, phase: "gate_failed" });
+  await f.retry("webapp", 1);
+  assert.equal(task().phase, "merged");
+  assert.equal(task().mergedSha, "feedface0001");
+  assert.equal(merged.length, 0);
+});
+
+test("reconcile marks an idle task merged when its PR was merged on GitHub, and leaves busy tasks alone", async () => {
+  for (const [phase, expected] of [["gate_failed", "merged"], ["pr_review", "merged"], ["interrupted", "merged"], ["gating", "gating"]] as const) {
+    const { f, task } = setup(noChecks, { findPr: async () => mergedOnGitHub, phase });
+    await f.reconcile(f.project("webapp"));
+    assert.equal(task().phase, expected, `from ${phase}`);
+  }
+});
+
+test("board sync runs the reconcile", async () => {
+  const { f, task } = setup(noChecks, { findPr: async () => mergedOnGitHub, phase: "gate_failed" });
+  await f.syncBoard("webapp", true);
+  await until(() => task().phase === "merged");
+});
+
+test("board sync ignores another PR on the same branch", async () => {
+  const { f, task } = setup(noChecks, { findPr: async () => ({ ...mergedOnGitHub, number: 4 }), phase: "gate_failed" });
+  await f.reconcile(f.project("webapp"));
+  assert.equal(task().phase, "gate_failed");
+});
+
 // Last: it rewrites kiln/issue-1, which the tests above match by its original sha.
 test("approvePr: commits with another email are re-authored to the source's commit email before the push", async () => {
   const noreply = "1+acme@users.noreply.github.com";
   const branchHead = () => sh(repo, "rev-parse", "kiln/issue-1");
-  const { f, merged, task } = setup(async () => ({ head: branchHead(), checks: [{ name: "build", bucket: "pass", link: "l" }] }), noreply);
+  const { f, merged, task } = setup(async () => ({ head: branchHead(), checks: [{ name: "build", bucket: "pass", link: "l" }] }), { commitEmail: noreply });
   await f.approvePr("webapp", 1);
   await until(() => task().phase !== "gating");
   assert.equal(task().phase, "merged", task().note ?? "");
