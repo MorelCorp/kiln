@@ -4,7 +4,8 @@ import { createSandbox } from "@ai-hero/sandcastle";
 import { bwrap } from "@ai-hero/sandcastle/sandboxes/bwrap";
 import { loadRules, type ProjectConfig } from "../config.ts";
 import type { GateState, TaskRow } from "../state/db.ts";
-import { git, type IssueDetail } from "../tasks/source.ts";
+import { git, type IssueDetail, type PullRequest } from "../tasks/source.ts";
+import { ciSummary, waitForCi } from "./ci.ts";
 import { extractJsonTag } from "../runs/stream.ts";
 import { reviewPrompt } from "../runs/prompts.ts";
 import type { Factory } from "./factory.ts";
@@ -14,6 +15,7 @@ export type GateOutcome =
   | { kind: "pr_review"; note: string }
   | { kind: "send_back"; note: string }
   | { kind: "escalate"; note: string }
+  | { kind: "ci_failed"; note: string }
   | { kind: "error"; note: string };
 
 /** Host git without running any of the project's hooks (the branch is agent-written). */
@@ -145,6 +147,42 @@ export async function rebaseAndCheck(
   return { ok: true, wt: await ensureWorktree(p, task.branch) };
 }
 
+/** How often to poll, and how long "no checks yet" may last, while waiting for CI. */
+export const CI_POLL_MS = 15_000;
+export const CI_GRACE_MS = 30_000;
+
+/**
+ * Gate step 5b (GitHub projects): wait for the PR's CI checks before merging. A poll, not an agent:
+ * it holds no agent slot and uses no model. Records a "CI" step on the gate and in the PR body.
+ */
+export async function awaitCi(
+  f: Factory, p: ProjectConfig, pr: PullRequest, gate: GateState, save: () => void, body?: (g: GateState) => string,
+  opts: { pollMs?: number; graceMs?: number; sleep?: (ms: number) => Promise<void> } = {},
+): Promise<{ ok: true } | { ok: false; note: string }> {
+  const src = f.source(p);
+  gate.ci = { status: "pending" };
+  save();
+  const res = await waitForCi(src, pr, {
+    timeoutMs: loadRules(p).ciTimeoutSeconds * 1000,
+    graceMs: opts.graceMs ?? CI_GRACE_MS,
+    pollMs: opts.pollMs ?? CI_POLL_MS,
+    sleep: opts.sleep,
+    onPoll: (checks) => {
+      const out = ciSummary(checks);
+      if (out !== (gate.ci?.output ?? "")) {
+        gate.ci = { status: "pending", output: out };
+        save();
+      }
+    },
+  });
+  const out = ciSummary(res.checks) || res.note;
+  const ok = res.status === "pass" || res.status === "none";
+  gate.ci = { status: ok ? "pass" : "fail", output: out };
+  save();
+  if (body) await src.editPrBody(pr, body(gate)).catch(() => undefined);
+  return ok ? { ok: true } : { ok: false, note: res.note };
+}
+
 export async function runGate(f: Factory, p: ProjectConfig, issue: IssueDetail, task: TaskRow): Promise<GateOutcome> {
   const src = f.source(p);
   const rules = loadRules(p);
@@ -193,6 +231,8 @@ export async function runGate(f: Factory, p: ProjectConfig, issue: IssueDetail, 
     // 5. Push and open (or update) the PR.
     await src.pushBranch(wt3, task.branch, true);
     const t = f.ledger.getTask(p.id, task.number)!;
+    const waitCi = p.source !== "local" && verdict.verdict !== "escalate" && !needsHuman;
+    if (waitCi) gate.ci = { status: "pending" };
     const body = prBody(issue, t, gate, hits);
     const pr = await src.openPr(task.branch, issue.title, body);
     f.emitTask(f.ledger.updateTask(p.id, task.number, { prNumber: pr.number, prUrl: pr.url }));
@@ -200,6 +240,10 @@ export async function runGate(f: Factory, p: ProjectConfig, issue: IssueDetail, 
     if (verdict.verdict === "escalate") return { kind: "escalate", note: `The reviewer escalated to you:\n\n${verdict.notes ?? ""}` };
     if (needsHuman) {
       return { kind: "pr_review", note: hits.length ? `Touches ${hits.join(", ")}: your review is required.` : "Risky task: your review is required." };
+    }
+    if (waitCi) {
+      const ci = await awaitCi(f, p, pr, gate, save, (g) => prBody(issue, f.ledger.getTask(p.id, task.number)!, g, hits));
+      if (!ci.ok) return { kind: "ci_failed", note: ci.note };
     }
     const sha = await src.mergePr(pr, issue.title, wt3);
     if (p.source === "local") await src.closeIssue(issue.number, `Merged by Kiln (${sha.slice(0, 7)}).`);
@@ -209,13 +253,16 @@ export async function runGate(f: Factory, p: ProjectConfig, issue: IssueDetail, 
   }
 }
 
-function prBody(issue: IssueDetail, t: TaskRow, gate: GateState, hits: string[]): string {
+export function prBody(issue: IssueDetail, t: TaskRow, gate: GateState, hits: string[]): string {
+  const ci = gate.ci
+    ? `\n- ${gate.ci.status === "pass" ? "✅" : gate.ci.status === "fail" ? "❌" : "⏳"} CI${gate.ci.output ? `:\n${gate.ci.output.split("\n").map((l) => `  - ${l}`).join("\n")}` : ""}`
+    : "";
   const checks = (gate.checks ?? []).map((c) => `- ${c.status === "pass" ? "✅" : "❌"} ${c.name}`).join("\n");
   const list = (t.checklist ?? []).map((c) => `- [ ] **${c.title}** (${c.env}): ${c.steps}. Expected: ${c.expected}`).join("\n");
   return [
     `Closes #${issue.number}`,
     t.note ? `## Summary\n\n${t.note}` : "",
-    `## Kiln gate\n\n- ✅ rebased on main\n${checks}\n- reviewer: **${gate.reviewer}**${gate.reviewerNotes ? `: ${gate.reviewerNotes}` : ""}`,
+    `## Kiln gate\n\n- ✅ rebased on main\n${checks}${ci}\n- reviewer: **${gate.reviewer}**${gate.reviewerNotes ? `: ${gate.reviewerNotes}` : ""}`,
     hits.length ? `Risky paths touched: ${hits.join(", ")}` : "",
     list ? `## Manual checks after deploy\n\n${list}` : "",
     "_Opened by Kiln._",

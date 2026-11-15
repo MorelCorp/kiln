@@ -18,7 +18,7 @@ import {
   StreamParser, extractJsonTag, extractTag, type ProgressItem, type RateLimitInfo, type RunEvent, type Usage,
 } from "../runs/stream.ts";
 import { DEFAULT_PROJECT_PROMPT, implementPrompt, planPrompt, protocolReminder, resumePrompt } from "../runs/prompts.ts";
-import { rebaseAndCheck, runGate, sandboxFor, worktreePath } from "./gate.ts";
+import { awaitCi, prBody, rebaseAndCheck, runGate, sandboxFor, worktreePath } from "./gate.ts";
 
 export const RUNS_DIR = join(KILN_STATE, "runs");
 
@@ -627,6 +627,7 @@ export class Factory {
         this.setPhase(task, "gate_failed", { note: outcome.note });
         return;
       case "escalate":
+      case "ci_failed":
         this.setPhase(task, "gate_failed", { note: outcome.note });
         return;
       case "error":
@@ -791,6 +792,15 @@ export class Factory {
       throw new Error(`Not merged: ${rc.note.split("\n")[0]}`);
     }
     await src.pushBranch(rc.wt, task.branch, true);
+    if (p.source !== "local") {
+      // Wait for the repo's CI on the pushed head before merging (a poll: no agent, no usage).
+      this.setPhase(task, "gating", { note: "Waiting for CI checks before merging." });
+      const ci = await awaitCi(this, p, pr, gate, save, (g) => prBody(issue, task, g, task.riskReason?.startsWith("path rule: ") ? task.riskReason.slice(11).split(", ") : []));
+      if (!ci.ok) {
+        this.setPhase(task, "gate_failed", { note: `Could not merge after your approval: ${ci.note}` });
+        throw new Error(`Not merged: ${ci.note.split("\n")[0]}`);
+      }
+    }
     const sha = await src.mergePr(pr, issue.title, rc.wt);
     if (p.source === "local") await src.closeIssue(number, `Merged by Kiln (${sha.slice(0, 7)}).`);
     this.setPhase(task, "merged", { mergedSha: sha, mergedAt: now() });

@@ -144,3 +144,64 @@ test("GitHubSource.mergePr: a failed branch delete does not fail the merge", asy
   }
   assert.ok(logged.some((m) => m.includes("kiln/issue-7")));
 });
+
+// ---- CI wait ------------------------------------------------------------------------------
+
+import { waitForCi } from "../src/factory/ci.ts";
+import type { CheckRun, PullRequest } from "../src/tasks/source.ts";
+
+const fakePr = { number: 7, url: "https://github.com/acme/webapp/pull/7", headRefName: "kiln/issue-7", state: "OPEN", mergedAt: null, mergeCommit: null, title: "t" } satisfies PullRequest;
+const chk = (name: string, bucket: CheckRun["bucket"]): CheckRun => ({ name, bucket, link: `https://ci.example/${name}` });
+
+/** A fake source returning successive polls, and a fake clock that sleeping advances. */
+function ciHarness(polls: CheckRun[][]) {
+  let t = 0, n = 0;
+  return {
+    src: { prChecks: async () => polls[Math.min(n++, polls.length - 1)] },
+    polls: () => n,
+    opts: { timeoutMs: 20 * 60_000, graceMs: 30_000, pollMs: 15_000, now: () => t, sleep: async (ms: number) => void (t += ms) },
+  };
+}
+
+test("CI wait: passes once every check has passed", async () => {
+  const h = ciHarness([[chk("build", "pending"), chk("lint", "pass")], [chk("build", "pass"), chk("lint", "pass"), chk("docs", "skipping")]]);
+  const r = await waitForCi(h.src, fakePr, h.opts);
+  assert.equal(r.status, "pass");
+  assert.equal(h.polls(), 2);
+});
+
+test("CI wait: a failing check fails at once, naming it with its link", async () => {
+  const h = ciHarness([[chk("build", "pending"), chk("lint", "fail")]]);
+  const r = await waitForCi(h.src, fakePr, h.opts);
+  assert.equal(r.status, "fail");
+  assert.match(r.note, /lint \(https:\/\/ci\.example\/lint\)/);
+  assert.doesNotMatch(r.note, /build/);
+});
+
+test("CI wait: still pending after the timeout names the pending checks", async () => {
+  const h = ciHarness([[chk("build", "pending"), chk("lint", "pass")]]);
+  const r = await waitForCi(h.src, fakePr, { ...h.opts, timeoutMs: 60_000 });
+  assert.equal(r.status, "timeout");
+  assert.match(r.note, /Still pending: build/);
+  assert.doesNotMatch(r.note, /lint/);
+});
+
+test("CI wait: no checks is only accepted after the grace period", async () => {
+  const h = ciHarness([[], [], [chk("build", "pass")]]);
+  const late = await waitForCi(h.src, fakePr, h.opts);
+  assert.equal(late.status, "pass"); // checks appeared within the grace period
+
+  const none = ciHarness([[]]);
+  const r = await waitForCi(none.src, fakePr, none.opts);
+  assert.equal(r.status, "none");
+  assert.ok(none.polls() >= 3, "kept polling through the 30 s grace period");
+});
+
+test("CI wait: tolerates a transient gh error but not a persistent one", async () => {
+  let n = 0;
+  const flaky = { prChecks: async () => { if (++n === 1) throw new Error("boom"); return [chk("build", "pass")]; } };
+  const h = ciHarness([]);
+  assert.equal((await waitForCi(flaky, fakePr, h.opts)).status, "pass");
+  const broken = { prChecks: async () => { throw new Error("down"); } };
+  await assert.rejects(waitForCi(broken, fakePr, h.opts), /down/);
+});

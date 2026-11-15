@@ -106,8 +106,10 @@ only sees the issue text.
 Run by Kiln after `<kiln-done>`: (0) the branch has commits, (1) rebase on the current main on the
 host with hooks disabled, (2) the project's checks inside the sandbox, (3) path rules (can only make
 the task stricter), (4) a reviewer agent in a fresh session on the same worktree (any change it makes
-is reset). Then Kiln pushes and opens the PR; simple tasks are squash-merged, risky ones wait for your
-review. Approving a PR re-runs steps 1-2 against the current main first, so a merge never lands on a
+is reset). Then Kiln pushes and opens the PR and, on GitHub projects, polls the PR's CI checks
+(`src/factory/ci.ts`: no agent, no usage; a failed or timed-out check sends the task to `gate_failed`);
+simple tasks are then squash-merged, risky ones wait for your
+review. Approving a PR re-runs steps 1-2 against the current main first (and waits for CI again), so a merge never lands on a
 stale branch; a conflict sends the task back to its agent.
 
 ### Chat
@@ -129,7 +131,7 @@ the factory state. It does not edit code; work goes through issues and runs.
 |---|---|
 | `src/cli.ts` | `kiln daemon`, `kiln run`, `kiln tasks`, `kiln local add` |
 | `src/factory/factory.ts` | Runs, task state machine, pace, usage guard, scheduler loop |
-| `src/factory/gate.ts` | Merge gate |
+| `src/factory/gate.ts`, `ci.ts` | Merge gate; CI wait |
 | `src/factory/envs.ts` | Version probes, merged PRs per environment, deploys |
 | `src/factory/assist.ts` | Read-only host agents: triage, quick capture, chat, usage probe |
 | `src/runs/stream.ts`, `prompts.ts` | Stream parser and the agent protocol / prompts |
