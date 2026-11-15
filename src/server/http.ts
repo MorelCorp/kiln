@@ -174,11 +174,15 @@ act("override", (f, pid, n, b) => f.override(pid, n, { model: b.model ?? null, e
 act("answer", (f, pid, n, b) => f.answer(pid, n, String(b.text ?? "")));
 act("approve-plan", (f, pid, n, b) => f.approvePlan(pid, n, b.note));
 act("revise-plan", (f, pid, n, b) => f.revisePlan(pid, n, String(b.note ?? "")));
-act("retry", (f, pid, n, b) => f.retry(pid, n, b.note));
+// Retry and send-back run a whole agent turn and/or the gate: answer at once, report through the
+// task's phase (and a toast if it throws).
+const background = (f: Factory, pid: string, n: number, job: Promise<unknown>) =>
+  void job.catch((e) => f.toast(`#${n}: ${e instanceof Error ? e.message : String(e)}`, "error", pid));
+act("retry", (f, pid, n, b) => background(f, pid, n, f.retry(pid, n, b.note)));
 act("human", (f, pid, n) => f.handToHuman(pid, n));
 act("drop", (f, pid, n) => f.drop(pid, n));
 act("approve-pr", (f, pid, n) => f.approvePr(pid, n));
-act("send-back", (f, pid, n, b) => f.retry(pid, n, String(b.note ?? "Please address the review notes.")));
+act("send-back", (f, pid, n, b) => background(f, pid, n, f.retry(pid, n, String(b.note ?? "Please address the review notes."))));
 act("tests", (f, pid, n, b) => f.submitTests(pid, n, b.results ?? [], !!b.final));
 act("triage", (f, pid, n) => assist.triageDraft(f, f.project(pid), n));
 

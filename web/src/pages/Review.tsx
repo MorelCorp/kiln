@@ -88,7 +88,12 @@ export function ReviewPage({ number, tab }: { number: number; tab?: string }) {
               </>
             ) : (
               <>
-                <Pill tone="orange" busy={busy === "approve-pr"} onClick={() => confirm(`Squash-merge #${number} into main?`) && call("approve-pr", {}, "Merged", "/board")}>Approve and merge</Pill>
+                {t.prNumber ? (
+                  <Pill tone="orange" busy={busy === "approve-pr"} onClick={() => confirm(`Squash-merge #${number} into main?`) && call("approve-pr", {}, "Merged", "/board")}>Approve and merge</Pill>
+                ) : (
+                  // The gate failed before opening a PR (e.g. the push was refused): nothing to approve yet.
+                  <Pill tone="orange" busy={busy === "retry"} onClick={() => call("retry", {}, "Gate re-running", "/task/" + number)}>Re-run gate</Pill>
+                )}
                 <Pill tone="peach" disabled={!note.trim()} busy={busy === "send-back"} onClick={() => call("send-back", { note }, "Sent back to the agent", "/task/" + number)}>Send back with note</Pill>
               </>
             )}
