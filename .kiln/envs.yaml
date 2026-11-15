@@ -3,7 +3,7 @@
 envs:
   - id: prod
     name: Running Kiln
-    probe: git rev-parse --short HEAD
+    probe: echo "${KILN_RUNNING_SHA:-$(git rev-parse --short HEAD)}"   # the commit the daemon started from
     candidate: git rev-parse --short origin/main
     deploy: scripts/deploy-self.sh
     deployLabel: Update and restart Kiln

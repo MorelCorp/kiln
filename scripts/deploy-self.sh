@@ -21,8 +21,18 @@ git merge --ff-only --quiet origin/main
 after="$(git rev-parse --short HEAD)"
 echo "Kiln $before -> $after"
 
-npm ci --no-audit --no-fund
-npm run build:web
+# --include=dev: the service sets NODE_ENV=production, which would make npm ci drop tsx (the
+# daemon's runner) and vite (the web build).
+install_and_build() {
+  npm ci --include=dev --no-audit --no-fund && npm run build:web
+}
+if ! install_and_build; then
+  # Leave the clone matching the code that still runs, so a later restart (or login) works.
+  echo "Update failed: rolling back to $before." >&2
+  git reset --quiet --hard "$before"
+  install_and_build || echo "Rollback install failed too: run 'npm ci --include=dev' here by hand." >&2
+  exit 1
+fi
 
 if systemctl --user cat kiln.service >/dev/null 2>&1; then
   echo "Restarting kiln.service. This page reconnects in a few seconds."
