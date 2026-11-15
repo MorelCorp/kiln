@@ -35,3 +35,7 @@ Set `KILN_HOME` to use another config directory. Your configuration never lives 
 
 Requirements: Node 24+, git, the GitHub CLI (`gh`, logged in), the Claude Code CLI, and a
 sandbox (bubblewrap on Linux, or Docker/Podman).
+
+## License
+
+MIT, see [LICENSE](LICENSE).
