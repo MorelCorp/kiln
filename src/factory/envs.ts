@@ -50,6 +50,37 @@ async function resolveSha(p: ProjectConfig, version: string): Promise<string | n
   return null;
 }
 
+/**
+ * The PR's merge commit as it is on main. GitHub keeps a PR's original merge sha, so after a history
+ * rewrite of main (e.g. scrubbing author emails) that sha is no longer on main (it may still exist
+ * locally, unreachable): fall back to the commit on main whose subject is the squash subject (the PR
+ * title, with or without " (#N)").
+ */
+export async function localMergeCommit(
+  p: ProjectConfig, pr: PullRequest, mainRef: string, subjects: () => Promise<Map<string, string>>,
+): Promise<string | null> {
+  if (!pr.mergeCommit) return null;
+  if (await isAncestor(p, pr.mergeCommit, mainRef)) return pr.mergeCommit;
+  const bySubject = await subjects();
+  return bySubject.get(`${pr.title} (#${pr.number})`) ?? bySubject.get(pr.title) ?? pr.mergeCommit;
+}
+
+/** Subject -> sha for the last 1000 commits on main (newest wins), loaded at most once per probe. */
+export function mainSubjects(p: ProjectConfig, ref: string): () => Promise<Map<string, string>> {
+  let memo: Promise<Map<string, string>> | undefined;
+  return () =>
+    (memo ??= git(p.path, ["log", "-n", "1000", "--format=%H%x09%s", ref])
+      .then((out) => {
+        const m = new Map<string, string>();
+        for (const line of out.split("\n").reverse()) {
+          const tab = line.indexOf("\t");
+          if (tab > 0) m.set(line.slice(tab + 1), line.slice(0, tab));
+        }
+        return m;
+      })
+      .catch(() => new Map()));
+}
+
 async function isAncestor(p: ProjectConfig, a: string, b: string): Promise<boolean> {
   try {
     await git(p.path, ["merge-base", "--is-ancestor", a, b]);
@@ -100,12 +131,14 @@ export async function probeEnvs(f: Factory, p: ProjectConfig, force = false): Pr
     }),
   );
 
+  const subjects = mainSubjects(p, mainRef);
   const prs = (await src.mergedPrs(60).catch(() => [])).filter((x) => x.headRefName.startsWith("kiln/"));
   const merged = await Promise.all(
     prs.map(async (pr) => {
       const on: string[] = [];
       if (pr.mergeCommit) {
-        for (const e of envs) if (e.sha && (await isAncestor(p, pr.mergeCommit, e.sha))) on.push(e.id);
+        const sha = await localMergeCommit(p, pr, mainRef, subjects);
+        for (const e of envs) if (sha && e.sha && (await isAncestor(p, sha, e.sha))) on.push(e.id);
       }
       return { ...pr, issue: issueOf(pr), on };
     }),
