@@ -45,6 +45,10 @@ export interface LiveRun {
   subagents: string[];
   calls: Map<string, Usage>;
   samples: { at: number; tokens: number }[];
+  /** Prompt size of the latest main-agent call: how full the context is now (drops after a compaction). */
+  context: number;
+  /** The provider's context cap for this run. */
+  contextWindow: number;
   activity: string;
   /** What to do after an abort: resume with this prompt. */
   then?: { prompt: string; kind: RunKind };
@@ -388,7 +392,7 @@ export class Factory {
     };
     const live: LiveRun = {
       row, controller: new AbortController(), events: [], progress: [], subagents: [], calls: new Map(),
-      samples: [], activity: kind === "review" ? "Reviewer reading the diff" : "Starting sandbox",
+      samples: [], context: 0, contextWindow: provider.contextWindow(), activity: kind === "review" ? "Reviewer reading the diff" : "Starting sandbox",
     };
     this.live.set(id, live);
     this.ledger.putRun(row);
@@ -428,6 +432,7 @@ export class Factory {
       rateLimit: (info) => this.onRateLimit(info, live),
       callUsage: (u, mid) => {
         live.calls.set(mid, u);
+        live.context = u.inputTokens + u.cacheCreateTokens + u.cacheReadTokens;
         let tot: Usage = { inputTokens: 0, cacheCreateTokens: 0, cacheReadTokens: 0, outputTokens: 0 };
         for (const c of live.calls.values()) {
           tot = {
@@ -525,6 +530,8 @@ export class Factory {
       progress: r.progress,
       subagents: r.subagents,
       rate: this.rateOf(r),
+      context: r.context,
+      contextWindow: r.contextWindow,
     };
   }
 

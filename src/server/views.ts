@@ -166,7 +166,7 @@ export function inboxView(f: Factory, p: ProjectConfig) {
 
 export function runSummary(f: Factory, r: RunRow) {
   const live = f.live.get(r.id);
-  return live ? f.runView(live) : { ...r, live: false, activity: r.summary, progress: [], subagents: [], rate: 0 };
+  return live ? f.runView(live) : { ...r, live: false, activity: r.summary, progress: [], subagents: [], rate: 0, context: 0, contextWindow: 0 };
 }
 
 export function tokensView(f: Factory, projectId?: string) {

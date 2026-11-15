@@ -22,13 +22,23 @@ export interface ProviderConfig {
   tokenEnv: string;
   /** Model id per tier. */
   models: Record<ModelTier, string>;
+  /**
+   * Context size, in tokens, an agent works within: the CLI compacts the conversation before it
+   * reaches this. Default 200000. Without a cap, 1M-context models only compact near 1M tokens,
+   * long past the point where quality drops.
+   */
+  contextWindow?: number;
 }
+
+export const DEFAULT_CONTEXT_WINDOW = 200_000;
 
 export interface ModelProvider {
   readonly config: ProviderConfig;
   /** Throws with a clear message if the provider cannot run (missing CLI, missing token, API key set, ...). */
   check(): Promise<void>;
   modelFor(tier: ModelTier): string;
+  /** Context size agents are held under (see `ProviderConfig.contextWindow`). */
+  contextWindow(): number;
   /**
    * The sandcastle agent for a run. Typed loosely here so this file does not depend on sandcastle;
    * the run manager passes it straight to `run({ agent })`.

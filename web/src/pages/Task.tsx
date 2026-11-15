@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  elapsed, fmtTok, money, post, TIER_LABEL, useApi, useBus, useNow,
+  contextTone, elapsed, fmtTok, money, post, TIER_LABEL, useApi, useBus, useNow,
   type Effort, type RunEvent, type TaskDetail, type Tier,
 } from "../api.ts";
 import { EffortSeg, Loading, Md, PageTitle, Pill, Sec, Tag, TierSeg, useApp } from "../ui.tsx";
@@ -161,6 +161,9 @@ export function TaskPage({ number }: { number: number }) {
               <span className="lbl" style={{ color: "var(--gold)" }}>Input</span><b>{fmtTok(current.inputTokens + current.cacheCreateTokens)}</b>
               <span className="lbl" style={{ color: "var(--gold)" }}>Cache read</span><b>{fmtTok(current.cacheReadTokens)}</b>
               <span className="lbl" style={{ color: "var(--gold)" }}>Output</span><b>{fmtTok(current.outputTokens)}</b>
+              {live && current.contextWindow > 0 && (
+                <><span className="lbl" style={{ color: "var(--gold)" }}>Context</span><b style={{ color: contextTone(current.context, current.contextWindow) }}>{fmtTok(current.context)} / {fmtTok(current.contextWindow)}</b></>
+              )}
               {live && <><span className="lbl" style={{ color: "var(--gold)" }}>Rate</span><b>{fmtTok(current.rate)}/min</b></>}
               <span className="lbl" style={{ color: "var(--gold)" }}>≈ Cost</span><b>{current.costUsd ? money(current.costUsd) : "after the run"}</b>
               <span className="lbl" style={{ color: "var(--gold)" }}>Extra usage</span><b style={{ color: current.usedOverage ? "var(--red)" : undefined }}>{current.usedOverage ? "USED" : "NONE"}</b>

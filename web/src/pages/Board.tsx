@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { elapsed, fmtTok, money, post, TIER_LABEL, useApi, useNow, type Board, type Card, type Effort, type RunView, type TaskRow, type Tier } from "../api.ts";
+import { contextTone, elapsed, fmtTok, money, post, TIER_LABEL, useApi, useNow, type Board, type Card, type Effort, type RunView, type TaskRow, type Tier } from "../api.ts";
 import { GithubLink, IssueModal } from "./IssueModal.tsx";
 import { EffortSeg, Loading, Pill, Tag, TierSeg, TONE, useApp } from "../ui.tsx";
 
@@ -202,7 +202,12 @@ export function AgentsAtWork() {
                 ))}
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 14px", fontSize: 14, letterSpacing: ".05em", color: "var(--gold)", textTransform: "uppercase" }}>
-                <span>{fmtTok(tok)} tok</span><span>{fmtTok(r.rate)}/min</span>{r.costUsd > 0 && <span>≈ {money(r.costUsd)}</span>}
+                {r.contextWindow > 0 && (
+                  <span style={{ color: contextTone(r.context, r.contextWindow) }} title="Context now / the size it is compacted under">
+                    ctx {fmtTok(r.context)} / {fmtTok(r.contextWindow)}
+                  </span>
+                )}
+                <span title="All tokens processed so far, cache reads included">{fmtTok(tok)} tok total</span><span>{fmtTok(r.rate)}/min</span>{r.costUsd > 0 && <span>≈ {money(r.costUsd)}</span>}
                 <span style={{ color: r.overridden ? "var(--orange)" : "var(--lavender)" }}>{TIER_LABEL[r.tier]} · {r.effort}{r.overridden ? "*" : ""}</span>
               </div>
               <span className="scan" style={{ background: c, animationDuration: `${2.4 + i * 0.7}s` }} aria-hidden="true" />

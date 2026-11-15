@@ -4,7 +4,8 @@ import { StreamParser, extractJsonTag, extractTag, type RunEvent, type Usage } f
 import { globToRegExp, riskyMatches } from "../src/factory/gate.ts";
 import { classify, labelsToClearOnPhase } from "../src/tasks/board.ts";
 import { GitHubSource } from "../src/tasks/source.ts";
-import { clampEffort, clampTier } from "../src/providers/types.ts";
+import { clampEffort, clampTier, DEFAULT_CONTEXT_WINDOW, type ProviderConfig } from "../src/providers/types.ts";
+import { ClaudeCodeProvider } from "../src/providers/claude.ts";
 import { repoFromRemote, type ProjectConfig } from "../src/config.ts";
 
 test("repoFromRemote reads owner/repo from https and ssh remotes", () => {
@@ -341,4 +342,17 @@ test("deployChoice defaults to the first option and refuses one the env does not
   assert.throws(() => deployChoice(env, "major; rm -rf /"), /Unknown deploy option/);
   // An env without options ignores whatever was sent.
   assert.equal(deployChoice({ id: "prod", name: "Prod", deploy: "./promote.sh" }, "minor"), undefined);
+});
+
+test("claude provider caps the auto-compact window at contextWindow", () => {
+  const base: ProviderConfig = {
+    id: "sub", kind: "claude-code", tokenEnv: "KILN_TEST_TOKEN",
+    models: { small: "s", medium: "m", large: "l" },
+  };
+  const def = new ClaudeCodeProvider(base);
+  assert.equal(def.contextWindow(), DEFAULT_CONTEXT_WINDOW);
+  assert.equal(def["env"]().CLAUDE_CODE_AUTO_COMPACT_WINDOW, String(DEFAULT_CONTEXT_WINDOW));
+  const set = new ClaudeCodeProvider({ ...base, contextWindow: 150000 });
+  assert.equal(set["env"]().CLAUDE_CODE_AUTO_COMPACT_WINDOW, "150000");
+  assert.equal(new ClaudeCodeProvider({ ...base, contextWindow: 0 }).contextWindow(), DEFAULT_CONTEXT_WINDOW);
 });
