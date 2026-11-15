@@ -340,10 +340,17 @@ export class Ledger {
     this.db.prepare("UPDATE deploys SET status = ?, data = ? WHERE id = ?").run(d.status, JSON.stringify(d), d.id);
   }
 
-  markOrphanDeploys() {
+  /**
+   * Settles deploys the previous daemon left running. `runningSha` is the commit this daemon runs
+   * from: a deploy of that version is a self-update that worked ("done"); anything else was cut
+   * short by the restart ("restarted").
+   */
+  markOrphanDeploys(runningSha?: string) {
+    const same = (v: string | null) =>
+      !!v && !!runningSha && (v.startsWith(runningSha) || runningSha.startsWith(v));
     for (const r of this.db.prepare("SELECT data FROM deploys WHERE status = 'running'").all() as { data: string }[]) {
       const d = JSON.parse(r.data) as DeployRow;
-      this.putDeploy({ ...d, status: "restarted", endedAt: now() });
+      this.putDeploy({ ...d, status: same(d.version) ? "done" : "restarted", endedAt: now() });
     }
   }
 

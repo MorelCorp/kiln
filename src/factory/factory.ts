@@ -82,7 +82,7 @@ export class Factory {
     this.cfg = loadConfig();
     mkdirSync(RUNS_DIR, { recursive: true });
     this.ledger.markOrphanRuns(new Set());
-    this.ledger.markOrphanDeploys();
+    this.ledger.markOrphanDeploys(process.env.KILN_RUNNING_SHA);
     // Tasks whose run died with the previous daemon resume by themselves (sessions persist on disk).
     for (const p of this.cfg.projects) {
       for (const t of this.ledger.listTasks(p.id)) {
@@ -875,7 +875,11 @@ export class Factory {
     this.tick();
   }
 
+  /** Set once the daemon is shutting down: work it kills on the way out is not a failure. */
+  stopping = false;
+
   stopLoop() {
+    this.stopping = true;
     if (this.timer) clearInterval(this.timer);
     for (const r of this.live.values()) this.abort(r, "shutdown");
   }
