@@ -315,3 +315,20 @@ test("readIssueThread tolerates an issue with no comments and only calls getIssu
   assert.equal(issue.body, "");
   assert.deepEqual(issue.comments, []);
 });
+
+import { Ledger } from "../src/state/db.ts";
+
+test("deploys cut short by a restart: done when the daemon now runs that version, else restarted", () => {
+  const l = new Ledger(joinPath(mkdtempSync(joinPath(tmpdir(), "kiln-deploys-")), "kiln.db"));
+  const base = { project: "kiln", env: "prod", status: "running" as const, startedAt: new Date().toISOString(), endedAt: null, logPath: "/dev/null" };
+  const self = l.addDeploy({ ...base, version: "abc1234" });
+  const other = l.addDeploy({ ...base, version: "def5678" });
+  const unknown = l.addDeploy({ ...base, version: null });
+  const finished = l.addDeploy({ ...base, version: "abc1234", status: "failed" });
+  l.markOrphanDeploys("abc1234");
+  const status = new Map(l.listDeploys("kiln").map((d) => [d.id, d.status]));
+  assert.equal(status.get(self.id), "done");
+  assert.equal(status.get(other.id), "restarted");
+  assert.equal(status.get(unknown.id), "restarted");
+  assert.equal(status.get(finished.id), "failed");
+});

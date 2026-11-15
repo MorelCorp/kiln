@@ -183,6 +183,10 @@ export async function deploy(f: Factory, p: ProjectConfig, envId: string): Promi
   child.stderr.on("data", onData);
   child.on("close", (code) => {
     deploying.delete(key);
+    // A deploy of Kiln itself restarts Kiln: the service stop signals the whole cgroup, this child
+    // included, while the daemon is still shutting down. That is not a failure: leave the row
+    // "running" and let the next daemon settle it (markOrphanDeploys).
+    if (code === null && f.stopping) return;
     const done = { ...row, status: code === 0 ? ("done" as const) : ("failed" as const), endedAt: new Date().toISOString() };
     f.ledger.putDeploy(done);
     f.emit({ type: "deploy", project: p.id, data: { deploy: done } });
