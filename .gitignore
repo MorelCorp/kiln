@@ -32,9 +32,9 @@ credentials*.json
 # Local Kiln config / state, if ever pointed inside the checkout
 kiln.config.json
 config.local.*
-local/
+/local/
 .kiln-home/
-state/
+/state/
 *.db
 *.db-journal
 *.sqlite
@@ -44,8 +44,8 @@ state/
 .sandcastle/logs/
 .sandcastle/worktrees/
 .sandcastle/.env
-runs/
-logs/
+/runs/
+/logs/
 *.log
 *.jsonl
 
