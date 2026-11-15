@@ -234,14 +234,30 @@ export class GitHubSource implements Source {
 
   async mergePr(pr: PullRequest, title: string, worktree: string) {
     const head = await this.gitRun(worktree, ["rev-parse", "HEAD"]);
+    const email = await this.noreplyEmail();
     // gh's own --delete-branch would also switch the local branch, which breaks with worktrees.
     await this.gh([
       "pr", "merge", String(pr.number), "-R", this.p.repo, "--squash", "--delete-branch=false",
-      "--subject", title, "--match-head-commit", head,
+      "--subject", title, "--match-head-commit", head, "--author-email", email,
     ]);
     await this.deleteRemoteBranch(pr.headRefName);
     const merged = await this.findPr(pr.headRefName);
     return merged?.mergeCommit ?? "";
+  }
+
+  private noreply?: Promise<string>;
+  /**
+   * The merging account's GitHub noreply address. Without --author-email, GitHub authors a squash
+   * merge with the account's primary email, which then shows in the repo's history. No fallback:
+   * if it cannot be read, the merge fails rather than exposing an address.
+   */
+  private noreplyEmail(): Promise<string> {
+    this.noreply ??= this.gh(["api", "user", "--jq", '"\\(.id)+\\(.login)@users.noreply.github.com"']).then((s) => {
+      if (!/^\d+\+[^@\s]+@users\.noreply\.github\.com$/.test(s)) throw new Error(`Unexpected noreply address from gh api user: "${s}"`);
+      return s;
+    });
+    this.noreply.catch(() => (this.noreply = undefined)); // retry on the next merge
+    return this.noreply;
   }
 
   /** Best effort: the merge already happened, so a failure here is logged and never thrown. */
