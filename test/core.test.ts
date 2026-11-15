@@ -53,7 +53,11 @@ test("classify maps labels to board states", () => {
   assert.equal(classify(issue(["ready-for-human"]), project).state, "human");
   assert.equal(classify(issue(["ready-for-agent", "kiln:running"]), project).state, "running");
   assert.equal(classify(issue(["ready-for-agent"], "CLOSED"), project).state, "done");
-  assert.equal(classify(issue([]), project).state, "other");
+  // No Kiln label at all: Triage (flagged), never hidden.
+  assert.equal(classify(issue([]), project).state, "triage");
+  assert.equal(classify(issue([]), project).untriaged, true);
+  assert.equal(classify(issue(["bug"]), project).untriaged, true);
+  assert.equal(classify(issue(["idea"]), project).untriaged, undefined);
   assert.equal(classify(issue(["ready-for-agent", "parked"]), { ...project, labels: { ...project.labels, skip: ["parked"] } }).state, "other");
   assert.equal(classify(issue(["priority:later"]), project).priority, 1);
 });
@@ -251,4 +255,29 @@ test("CI wait: an abort signal interrupts the wait, even mid-sleep", async () =>
   const r = await waitForCi({ prChecks: async () => (polls++, { head: "abc", checks: [] }) }, fakePr, { head: "abc", timeoutMs: 1, graceMs: 1, pollMs: 1, signal: ctl.signal });
   assert.equal(r.status, "aborted");
   assert.equal(polls, 0);
+});
+
+// ---- merge commits after a rewrite of main ------------------------------------------------
+
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join as joinPath } from "node:path";
+import { execFileSync } from "node:child_process";
+import { localMergeCommit, mainSubjects } from "../src/factory/envs.ts";
+
+test("localMergeCommit finds a squash commit on main after its history was rewritten", async () => {
+  const dir = mkdtempSync(joinPath(tmpdir(), "kiln-rewrite-"));
+  const g = (...a: string[]) => execFileSync("git", ["-C", dir, ...a], { encoding: "utf8" }).trim();
+  g("init", "-q", "-b", "main");
+  g("-c", "user.name=a", "-c", "user.email=a@example.com", "commit", "-q", "--allow-empty", "-m", "base");
+  g("-c", "user.name=a", "-c", "user.email=a@example.com", "commit", "-q", "--allow-empty", "-m", "Fix the thing");
+  const old = g("rev-parse", "HEAD");
+  g("-c", "user.name=a", "-c", "user.email=b@example.com", "commit", "-q", "--amend", "--allow-empty", "--reset-author", "-m", "Fix the thing");
+  const rewritten = g("rev-parse", "HEAD");
+  assert.notEqual(old, rewritten);
+  const p = { id: "x", name: "x", path: dir, repo: "acme/webapp" } as ProjectConfig;
+  const pr = { number: 3, url: "u", headRefName: "kiln/issue-3", state: "MERGED" as const, mergedAt: "t", mergeCommit: old, title: "Fix the thing" };
+  assert.equal(await localMergeCommit(p, pr, "main", mainSubjects(p, "main")), rewritten);
+  // A merge commit that is on main is used as is.
+  assert.equal(await localMergeCommit(p, { ...pr, mergeCommit: rewritten }, "main", mainSubjects(p, "main")), rewritten);
 });

@@ -12,6 +12,8 @@ export interface Task {
   /** Index in the project's priority list; lower is more urgent. */
   priority: number;
   closedAt?: string;
+  /** Open, not parked, and carrying none of Kiln's labels: shown in Triage so it is not invisible. */
+  untriaged?: boolean;
 }
 
 export function classify(issue: Issue, p: ProjectConfig): Task {
@@ -24,7 +26,8 @@ export function classify(issue: Issue, p: ProjectConfig): Task {
   else if (p.labels.triage.some(has)) state = "triage";
   else if (has(p.labels.human)) state = "human";
   else if (has(p.labels.ready)) state = "ready";
-  else state = "other";
+  else state = "triage";
+  const untriaged = state === "triage" && !p.labels.triage.some(has);
   const pi = p.labels.priority.findIndex(has);
   return {
     number: issue.number,
@@ -34,6 +37,7 @@ export function classify(issue: Issue, p: ProjectConfig): Task {
     state,
     priority: pi === -1 ? p.labels.priority.length : pi,
     closedAt: issue.closedAt ?? undefined,
+    ...(untriaged ? { untriaged } : {}),
   };
 }
 

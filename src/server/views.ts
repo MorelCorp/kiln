@@ -115,7 +115,7 @@ export function boardView(f: Factory, p: ProjectConfig) {
       else if (on.includes(stagingId)) cols.staging.push(c);
       else cols.merged.push(c);
     } else if (i.state === "triage") {
-      cols.triage.push(card);
+      cols.triage.push(i.untriaged ? { ...card, tags: [{ text: "untriaged", tone: "dim" }, ...card.tags] } : card);
     } else if (i.state === "ready" || i.state === "running") {
       cols.ready.push(card);
     } else if (i.state === "human") {
