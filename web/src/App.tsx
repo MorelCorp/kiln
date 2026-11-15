@@ -271,7 +271,10 @@ function ChatPopup({ open, onClose }: { open: boolean; onClose: () => void }) {
   useBus((e) => {
     if (e.type === "chat" && e.project === pid) setChat(e.data);
   });
-  useEffect(() => end.current?.scrollIntoView({ block: "end" }), [chat?.messages.length, open]);
+  // Braces matter: newer browsers return a Promise from scrollIntoView, and React would call it as the cleanup.
+  useEffect(() => {
+    end.current?.scrollIntoView({ block: "end" });
+  }, [chat?.messages.length, open]);
 
   const send = async () => {
     const t = text.trim();

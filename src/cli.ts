@@ -1,4 +1,5 @@
-import { loadConfig, loadEnv, getProject } from "./config.ts";
+import { execFileSync } from "node:child_process";
+import { KILN_ROOT, loadConfig, loadEnv, getProject } from "./config.ts";
 
 loadEnv();
 
@@ -30,6 +31,13 @@ function guardApiKey() {
 
 async function daemon() {
   guardApiKey();
+  // The commit this process runs, for the self project's env probe: the clone's HEAD can move
+  // (an update that failed after fetching) while the old code keeps running.
+  try {
+    process.env.KILN_RUNNING_SHA = execFileSync("git", ["-C", KILN_ROOT, "rev-parse", "--short", "HEAD"], { encoding: "utf8" }).trim();
+  } catch {
+    /* not a git checkout: the probe falls back to HEAD */
+  }
   const { Factory } = await import("./factory/factory.ts");
   const { startServer } = await import("./server/http.ts");
   const f = new Factory();
