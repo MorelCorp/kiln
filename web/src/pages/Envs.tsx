@@ -10,6 +10,7 @@ export function EnvsPage() {
   const [logs, setLogs] = useState<Record<number, string>>({});
   const [open, setOpen] = useState<number | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [picks, setPicks] = useState<Record<string, string>>({});
   useBus((e) => {
     if (e.type !== "deploy" || e.project !== pid) return;
     if (e.data.line && e.data.id) {
@@ -25,10 +26,13 @@ export function EnvsPage() {
     if (r) setV(r);
     setBusy(null);
   };
-  const doDeploy = async (envId: string, name: string) => {
-    if (!confirm(`Run the ${name} deploy script now?`)) return;
+  const doDeploy = async (envId: string, name: string, choice?: string) => {
+    if (!confirm(`Run the ${name} deploy script now${choice ? ` (${choice})` : ""}?`)) return;
     setBusy(envId);
-    const r = await act(() => post<{ id: number }>(`/api/p/${pid}/envs/${envId}/deploy`), `Deploy to ${name} started`);
+    const r = await act(
+      () => post<{ id: number }>(`/api/p/${pid}/envs/${envId}/deploy`, choice ? { choice } : {}),
+      `Deploy to ${name} started${choice ? ` (${choice})` : ""}`,
+    );
     if (r) setOpen(r.id);
     setBusy(null);
     reload();
@@ -78,6 +82,8 @@ export function EnvsPage() {
           const prev = i > 0 ? v.envs[i - 1] : null;
           const pending = prev ? v.merged.filter((m) => m.on.includes(prev.id) && !m.on.includes(e.id)) : notOn(e.id);
           const gatesOk = e.gates.every((g) => g.ok);
+          const choices = e.deployChoices ?? [];
+          const pick = choices.includes(picks[e.id]) ? picks[e.id] : choices[0];
           return (
             <section className="env" aria-label={e.name} key={e.id}>
               <div className="envh" style={{ background: c }}><span>{e.name.toUpperCase()}</span><span className="lbl">{e.url}</span></div>
@@ -97,9 +103,20 @@ export function EnvsPage() {
                   <span key={g.name} title={g.output} style={{ color: g.ok ? "var(--sky)" : "var(--redsoft)" }}>{g.ok ? "✓" : "✗"} {g.name}</span>
                 ))}
                 {e.canDeploy && (
-                  <Pill tone={i === v.envs.length - 1 ? "salmon" : "peach"} busy={busy === e.id} disabled={!gatesOk} onClick={() => doDeploy(e.id, e.name)} style={{ alignSelf: "flex-start" }}>
-                    {e.deployLabel ?? `Deploy ${e.name}`}{gatesOk ? "" : " · locked"}
-                  </Pill>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                    {choices.length > 0 && (
+                      <div className="seg" role="radiogroup" aria-label={`${e.name} deploy option`}>
+                        {choices.map((o) => (
+                          <button key={o} role="radio" aria-checked={pick === o} className={pick === o ? "on" : ""} style={{ padding: "6px 14px" }} onClick={() => setPicks((p) => ({ ...p, [e.id]: o }))}>
+                            {o}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <Pill tone={i === v.envs.length - 1 ? "salmon" : "peach"} busy={busy === e.id} disabled={!gatesOk} onClick={() => doDeploy(e.id, e.name, pick)}>
+                      {e.deployLabel ?? `Deploy ${e.name}`}{gatesOk ? "" : " · locked"}
+                    </Pill>
+                  </div>
                 )}
                 {!gatesOk && <span className="lbl" style={{ color: "var(--muted)" }}>Unlocks when every gate above passes.</span>}
               </div>

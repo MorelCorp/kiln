@@ -214,6 +214,11 @@ export interface EnvProbe {
   /** Deploy (staging) or promote (prod) script, run in the project dir. */
   deploy?: string;
   deployLabel?: string;
+  /**
+   * Options picked next to the deploy button, e.g. `[patch, minor, major]`; the first is the default.
+   * The pick reaches the deploy command as `$KILN_DEPLOY_CHOICE` (an env var, never spliced into the command).
+   */
+  deployChoices?: string[];
   /** Commands that must all exit 0 before `deploy` is allowed (release gate). */
   gate?: { name: string; run: string }[];
   /** Command that prints the candidate version this deploy would ship. */
