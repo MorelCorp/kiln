@@ -150,7 +150,7 @@ export function TaskPage({ number }: { number: number }) {
                 {p.status === "completed" ? "✓" : p.status === "in_progress" ? "▸" : "○"} {p.content}
               </span>
             ))}
-            <span className="lbl" style={{ color: "var(--muted)" }}>then gates: rebase · checks · reviewer</span>
+            <span className="lbl" style={{ color: "var(--muted)" }}>then gates: rebase · checks · reviewer · CI</span>
           </section>
         )}
         {task?.gate && <GateBox t={task} />}
@@ -258,6 +258,12 @@ export function GateBox({ t }: { t: NonNullable<TaskDetail["task"]> }) {
           {c.output && <pre className="log">{c.output}</pre>}
         </details>
       ))}
+      {g.ci && (
+        <details>
+          <summary className="gate"><i style={{ borderColor: color(g.ci.status), background: g.ci.status === "pass" ? "var(--sky)" : undefined }} /> <span>{mark(g.ci.status)} CI</span></summary>
+          {g.ci.output && <pre className="log">{g.ci.output}</pre>}
+        </details>
+      )}
       <div className="gate"><i style={{ borderColor: color(g.reviewer), background: g.reviewer === "approve" ? "var(--sky)" : undefined }} /> <span>{mark(g.reviewer)} Reviewer {g.reviewer && g.reviewer !== "pending" ? `· ${g.reviewer}` : ""}</span></div>
       {g.reviewerNotes && <div style={{ color: "var(--peach)", fontSize: 15 }}><Md text={g.reviewerNotes} /></div>}
     </section>

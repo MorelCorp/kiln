@@ -29,6 +29,19 @@ export interface PullRequest {
   title: string;
 }
 
+/** One CI check on a PR's head commit. `bucket` is gh's normalized outcome. */
+export interface CheckRun {
+  name: string;
+  bucket: "pass" | "fail" | "pending" | "skipping" | "cancel";
+  link: string;
+}
+
+/** The PR's CI checks, with the head commit they were read for. */
+export interface PrChecks {
+  head: string;
+  checks: CheckRun[];
+}
+
 /**
  * Where a project's issues and pull requests live. GitHub through `gh` for real projects;
  * "local" keeps issues in the ledger and merges branches into the local main, for trying
@@ -45,6 +58,10 @@ export interface Source {
   pushBranch(worktree: string, branch: string, force?: boolean): Promise<void>;
   findPr(branch: string): Promise<PullRequest | undefined>;
   openPr(branch: string, title: string, body: string): Promise<PullRequest>;
+  /** Update the PR description (best effort for callers). */
+  editPrBody(pr: PullRequest, body: string): Promise<void>;
+  /** CI checks on the PR's head commit. Empty when none are reported (or for local projects). */
+  prChecks(pr: PullRequest): Promise<PrChecks>;
   /** Squash-merge. Returns the merge commit sha on main. */
   mergePr(pr: PullRequest, title: string, worktree: string): Promise<string>;
   /** Merged PRs from kiln/ branches, newest first. */
@@ -183,6 +200,38 @@ export class GitHubSource implements Source {
     return pr;
   }
 
+  async editPrBody(pr: PullRequest, body: string) {
+    await this.gh(["pr", "edit", String(pr.number), "-R", this.p.repo, "--body", body]);
+  }
+
+  private async prHead(pr: PullRequest): Promise<string> {
+    return JSON.parse(await this.gh(["pr", "view", String(pr.number), "-R", this.p.repo, "--json", "headRefOid"])).headRefOid ?? "";
+  }
+
+  async prChecks(pr: PullRequest): Promise<PrChecks> {
+    // The head is read on both sides of the checks: if a push landed in between, report no head.
+    const before = await this.prHead(pr);
+    const checks = await this.readChecks(pr);
+    const after = await this.prHead(pr);
+    return { head: before === after ? before : "", checks };
+  }
+
+  private async readChecks(pr: PullRequest): Promise<CheckRun[]> {
+    let out = "";
+    try {
+      out = await this.gh(["pr", "checks", String(pr.number), "-R", this.p.repo, "--json", "name,bucket,link"]);
+    } catch (e) {
+      // gh exits 1 on failed checks and 8 on pending ones, but still prints the JSON.
+      const err = e as { stdout?: string; stderr?: string };
+      out = (err.stdout ?? "").trim();
+      if (!out) {
+        if (/no checks reported/i.test(err.stderr ?? "")) return [];
+        throw e;
+      }
+    }
+    return (JSON.parse(out || "[]") as CheckRun[]).map((c) => ({ name: c.name, bucket: c.bucket, link: c.link ?? "" }));
+  }
+
   async mergePr(pr: PullRequest, title: string, worktree: string) {
     const head = await this.gitRun(worktree, ["rev-parse", "HEAD"]);
     // gh's own --delete-branch would also switch the local branch, which breaks with worktrees.
@@ -298,6 +347,12 @@ class LocalSource implements Source {
   async openPr(branch: string, title: string): Promise<PullRequest> {
     const n = Number(branch.split("-").pop());
     return { number: n, url: this.url(n), headRefName: branch, title, state: "OPEN", mergedAt: null, mergeCommit: null };
+  }
+
+  async editPrBody() {}
+
+  async prChecks(): Promise<PrChecks> {
+    return { head: "", checks: [] };
   }
 
   async mergePr(pr: PullRequest, title: string, worktree: string) {

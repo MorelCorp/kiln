@@ -77,6 +77,8 @@ export interface TaskRow {
 export interface GateState {
   rebase?: "pending" | "pass" | "fail";
   checks?: { name: string; status: "pending" | "pass" | "fail"; output?: string }[];
+  /** The PR's CI checks (GitHub projects). `output` lists the checks and their links. */
+  ci?: { status: "pending" | "pass" | "fail"; output?: string };
   reviewer?: "pending" | "approve" | "revise" | "escalate";
   reviewerNotes?: string;
 }

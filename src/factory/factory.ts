@@ -12,13 +12,13 @@ import { clampEffort, clampTier, TIER_ORDER, type Effort, type ModelProvider, ty
 import {
   Ledger, type ChecklistItem, type Phase, type RunKind, type RunRow, type TaskRow, type UsageSnapshot,
 } from "../state/db.ts";
-import { git, sourceFor, type IssueDetail, type Source } from "../tasks/source.ts";
+import { git, sourceFor, type IssueDetail, type PullRequest, type Source } from "../tasks/source.ts";
 import { classify, labelsToClearOnPhase, type Task } from "../tasks/board.ts";
 import {
   StreamParser, extractJsonTag, extractTag, type ProgressItem, type RateLimitInfo, type RunEvent, type Usage,
 } from "../runs/stream.ts";
 import { DEFAULT_PROJECT_PROMPT, implementPrompt, planPrompt, protocolReminder, resumePrompt } from "../runs/prompts.ts";
-import { rebaseAndCheck, runGate, sandboxFor, worktreePath } from "./gate.ts";
+import { awaitCi, CI_GRACE_MS, CI_POLL_MS, prBody, rebaseAndCheck, runGate, sandboxFor, worktreePath } from "./gate.ts";
 
 export const RUNS_DIR = join(KILN_STATE, "runs");
 
@@ -72,6 +72,10 @@ export class Factory {
   private syncing = new Map<string, Promise<Task[]>>();
   private timer?: NodeJS.Timeout;
   private starting = new Set<string>();
+  /** The CI waits in progress (a poll, not a run), so Stop and Drop can interrupt them. */
+  private ciWaits = new Map<string, AbortController>();
+  /** How often the CI wait polls, and its grace period for checks that have not appeared yet. */
+  ciTiming = { pollMs: CI_POLL_MS, graceMs: CI_GRACE_MS };
 
   constructor() {
     this.bus.setMaxListeners(100);
@@ -262,6 +266,23 @@ export class Factory {
   }
 
   // ---- runs -----------------------------------------------------------------
+
+  registerCiWait(project: string, number: number): AbortController {
+    const ctl = new AbortController();
+    this.ciWaits.set(`${project}#${number}`, ctl);
+    return ctl;
+  }
+
+  clearCiWait(project: string, number: number, ctl: AbortController) {
+    if (this.ciWaits.get(`${project}#${number}`) === ctl) this.ciWaits.delete(`${project}#${number}`);
+  }
+
+  /** Interrupt a task's CI wait, if any. Returns whether there was one. */
+  abortCiWait(project: string, number: number): boolean {
+    const ctl = this.ciWaits.get(`${project}#${number}`);
+    ctl?.abort();
+    return !!ctl;
+  }
 
   liveFor(project: string, number: number): LiveRun | undefined {
     for (const r of this.live.values()) if (r.row.project === project && r.row.number === number) return r;
@@ -627,8 +648,11 @@ export class Factory {
         this.setPhase(task, "gate_failed", { note: outcome.note });
         return;
       case "escalate":
+      case "ci_failed":
         this.setPhase(task, "gate_failed", { note: outcome.note });
         return;
+      case "aborted":
+        return; // stopped or dropped during the CI wait: that action already set the phase
       case "error":
         this.setPhase(task, "failed", { note: outcome.note });
         return;
@@ -646,6 +670,7 @@ export class Factory {
   }
 
   async stop(projectId: string, number: number) {
+    this.abortCiWait(projectId, number);
     const live = this.liveFor(projectId, number);
     if (live) this.abort(live, "stop");
     else {
@@ -759,6 +784,7 @@ export class Factory {
   async handToHuman(projectId: string, number: number) {
     const p = this.project(projectId);
     const t = this.ledger.getTask(projectId, number);
+    this.abortCiWait(projectId, number);
     await this.source(p).editLabels(number, [p.labels.human], [p.labels.ready, p.labels.running]);
     if (t) this.setPhase(t, "human", { note: "Handed to a human." });
     await this.syncBoard(projectId, true);
@@ -767,33 +793,56 @@ export class Factory {
   async drop(projectId: string, number: number) {
     const p = this.project(projectId);
     const t = this.ledger.getTask(projectId, number);
+    this.abortCiWait(projectId, number);
     const live = this.liveFor(projectId, number);
     if (live) this.abort(live, "stop");
     await this.source(p).editLabels(number, [], [p.labels.ready, p.labels.running]).catch(() => undefined);
     if (t) this.setPhase(t, "dropped", { note: "Dropped by you." });
   }
 
-  /** You approved a PR in Kiln: merge it (gates already passed). */
+  /**
+   * You approved a PR in Kiln: merge it. Returns once the flow has started; it then runs in the
+   * background (rebase, checks, push, CI wait, merge) and reports through the task's phase
+   * (`gating`, then `merged` or `gate_failed`).
+   */
   async approvePr(projectId: string, number: number) {
     const { p, issue, task } = await this.withIssue(projectId, number);
     if (task.phase !== "pr_review" && !(task.phase === "gate_failed" && task.prNumber)) {
       throw new Error(`#${number} has no PR waiting for review`);
     }
-    const src = this.source(p);
-    const pr = await src.findPr(task.branch);
+    const pr = await this.source(p).findPr(task.branch);
     if (!pr) throw new Error("PR not found");
+    const running = this.setPhase(task, "gating", { note: "Approved: rebasing, then waiting for CI before merging." });
+    void this.mergeApproved(p, issue, running, pr).catch((e) => {
+      const cur = this.ledger.getTask(p.id, number);
+      if (cur?.phase === "gating") this.setPhase(cur, "gate_failed", { note: `Could not merge after your approval: ${e instanceof Error ? e.message : String(e)}` });
+    });
+  }
+
+  private async mergeApproved(p: ProjectConfig, issue: IssueDetail, task: TaskRow, pr: PullRequest) {
+    const number = task.number;
+    const src = this.source(p);
+    // Stopped or dropped meanwhile: do not touch the task or merge.
+    const stillGating = () => this.ledger.getTask(p.id, number)?.phase === "gating";
+    const fail = (note: string) => this.setPhase(this.ledger.getTask(p.id, number)!, "gate_failed", { note: `Could not merge after your approval: ${note}` });
     // Main may have moved since the gate ran: rebase and re-run the checks before merging.
     const gate = { ...(task.gate ?? {}), rebase: "pending" as const };
     const save = () => this.emitTask(this.ledger.updateTask(p.id, number, { gate: { ...gate } }));
     const rc = await rebaseAndCheck(this, p, task, gate, save);
-    if (!rc.ok) {
-      this.setPhase(task, "gate_failed", { note: `Could not merge after your approval: ${rc.note}` });
-      throw new Error(`Not merged: ${rc.note.split("\n")[0]}`);
-    }
+    if (!stillGating()) return;
+    if (!rc.ok) return void fail(rc.note);
     await src.pushBranch(rc.wt, task.branch, true);
+    if (p.source !== "local") {
+      // Wait for the repo's CI on the pushed head before merging (a poll: no agent, no usage).
+      const head = await git(rc.wt, ["rev-parse", "HEAD"]);
+      const hits = task.riskReason?.startsWith("path rule: ") ? task.riskReason.slice(11).split(", ") : [];
+      const ci = await awaitCi(this, p, task, pr, head, gate, save, (g) => prBody(issue, this.ledger.getTask(p.id, number)!, g, hits));
+      if (!ci.ok) return ci.aborted || !stillGating() ? undefined : void fail(ci.note);
+    }
+    if (!stillGating()) return;
     const sha = await src.mergePr(pr, issue.title, rc.wt);
     if (p.source === "local") await src.closeIssue(number, `Merged by Kiln (${sha.slice(0, 7)}).`);
-    this.setPhase(task, "merged", { mergedSha: sha, mergedAt: now() });
+    this.setPhase(this.ledger.getTask(p.id, number)!, "merged", { mergedSha: sha, mergedAt: now() });
   }
 
   async submitTests(projectId: string, number: number, results: ChecklistItem[], final: boolean) {
