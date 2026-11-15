@@ -145,6 +145,10 @@ export interface RunView {
   progress: { content: string; status: "pending" | "in_progress" | "completed" }[];
   subagents: string[];
   rate: number;
+  /** Live runs: prompt size of the latest call (how full the context is). 0 when unknown. */
+  context: number;
+  /** The context cap the agent compacts under. 0 when unknown. */
+  contextWindow: number;
 }
 
 export interface IssueDetail {
@@ -374,6 +378,12 @@ export function fmtTok(n: number): string {
   if (n >= 1e6) return `${(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)}M`;
   if (n >= 1e3) return `${Math.round(n / 1e3)}K`;
   return String(n);
+}
+
+/** Context fill colour: calm under 60% of the window, orange near the compaction point, red past it. */
+export function contextTone(context: number, window: number): string {
+  const f = window > 0 ? context / window : 0;
+  return f >= 0.85 ? "var(--red)" : f >= 0.6 ? "var(--orange)" : "var(--gold)";
 }
 
 export const pct = (x: number | null | undefined) => (x === null || x === undefined ? "--" : `${String(Math.round(x * 100)).padStart(2, "0")}%`);

@@ -103,6 +103,13 @@ Claude Code emits a `rate_limit_event` in its stream with the **whole subscripti
 Per run and per task; the subscription's 5-hour and 7-day utilization (from `rate_limit_event`)
 next to Kiln's own share; daily/weekly trend by model; live tokens-per-minute while agents run.
 
+**Context cap.** A provider's `contextWindow` (default 200000 tokens) is the size an agent's
+conversation is held under: the CLI compacts it before it gets there, so long runs never drift into
+a huge context where quality drops (1M-context models would otherwise only compact near 1M). Each
+live agent shows `ctx <now> / <cap>`, the size of its latest prompt, turning orange at 60% and red
+at 85%. This is separate from the token total, which counts every call's input (cache reads included)
+and so grows much faster than the context itself.
+
 ## Chat
 
 Asks about the project and factory state, and **proposes actions** (create issue, relabel, close an issue

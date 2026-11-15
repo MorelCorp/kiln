@@ -7,7 +7,7 @@ import { KILN_STATE } from "../config.ts";
 import { promisify } from "node:util";
 import { createInterface } from "node:readline";
 import { claudeCode, claudeHostSessionPath, findClaudeSessionOnHost, transferClaudeSession } from "@ai-hero/sandcastle";
-import type { Effort, HostAskOptions, HostAskResult, ModelProvider, ModelTier, ProviderConfig } from "./types.ts";
+import { DEFAULT_CONTEXT_WINDOW, type Effort, type HostAskOptions, type HostAskResult, type ModelProvider, type ModelTier, type ProviderConfig } from "./types.ts";
 import { StreamParser, type StreamSink } from "../runs/stream.ts";
 
 const exec = promisify(execFile);
@@ -36,8 +36,19 @@ export class ClaudeCodeProvider implements ModelProvider {
     return this.config.models[tier];
   }
 
+  contextWindow(): number {
+    const w = this.config.contextWindow;
+    return typeof w === "number" && w > 0 ? Math.round(w) : DEFAULT_CONTEXT_WINDOW;
+  }
+
   private env(): Record<string, string> {
-    return { CLAUDE_CODE_OAUTH_TOKEN: process.env[this.config.tokenEnv]! };
+    return {
+      CLAUDE_CODE_OAUTH_TOKEN: process.env[this.config.tokenEnv]!,
+      // Claude Code otherwise runs 1M-context models with a ~980K auto-compact window, so a long
+      // run would only compact near 1M tokens. This makes it compact before `contextWindow`
+      // (it keeps ~20K of that for output, so compaction starts a little below it).
+      CLAUDE_CODE_AUTO_COMPACT_WINDOW: String(this.contextWindow()),
+    };
   }
 
   /**
