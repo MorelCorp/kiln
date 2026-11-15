@@ -37,8 +37,9 @@ async function daemon() {
   startServer(f, port);
   f.startLoop();
   // A fresh reading of the subscription windows, so the header and the usage guard are not blind.
+  // Skipped while the last reading says a window is exhausted (the probe would itself be extra usage).
   const last = f.ledger.lastUsage();
-  if (!last || Date.now() - Date.parse(last.at) > 30 * 60_000) {
+  if (!f.extraUsageBlock() && (!last || Date.now() - Date.parse(last.at) > 30 * 60_000)) {
     const { probeUsage } = await import("./factory/assist.ts");
     probeUsage(f, f.project()).catch((e) => console.error(`Usage probe failed: ${e.message}`));
   }

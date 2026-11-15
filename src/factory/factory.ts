@@ -194,6 +194,22 @@ export class Factory {
     return undefined;
   }
 
+  /**
+   * Why any model call would be extra usage right now (window exhausted or overage in use, reset still
+   * ahead), unless extra usage is allowed. Guards the interactive helpers too, not only agent runs.
+   */
+  extraUsageBlock(): string | undefined {
+    if (this.cfg.pace.allowExtraUsage) return undefined;
+    const u = this.ledger.lastUsage();
+    if (!u) return undefined;
+    const ahead = (t: number | null) => (t ?? 0) * 1000 > Date.now();
+    const at = (t: number | null) => new Date((t ?? 0) * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+    if ((u.fiveHour ?? 0) >= 1 && ahead(u.fiveHourResetsAt)) return `5-hour window exhausted until ${at(u.fiveHourResetsAt)}`;
+    if ((u.sevenDay ?? 0) >= 1 && ahead(u.sevenDayResetsAt)) return `7-day window exhausted until ${at(u.sevenDayResetsAt)}`;
+    if (u.isUsingOverage && ahead(u.fiveHourResetsAt)) return `extra usage in use until ${at(u.fiveHourResetsAt)}`;
+    return undefined;
+  }
+
   kilnTokensSince(ms: number): number {
     const since = new Date(ms).toISOString();
     let sum = 0;
