@@ -219,10 +219,25 @@ export interface EnvProbe {
    * The pick reaches the deploy command as `$KILN_DEPLOY_CHOICE` (an env var, never spliced into the command).
    */
   deployChoices?: string[];
-  /** Commands that must all exit 0 before `deploy` is allowed (release gate). */
-  gate?: { name: string; run: string }[];
+  /** Checks that must all pass (or be skipped) before `deploy` is allowed (release gate). */
+  gate?: GateDef[];
   /** Command that prints the candidate version this deploy would ship. */
   candidate?: string;
+}
+
+export interface GateDef {
+  name: string;
+  /** The check: passes when it exits 0. Runs on every probe, so keep it fast (60 s cap). */
+  run: string;
+  /**
+   * Optional step that produces what the check looks for (a scan, a report, an agent run), started
+   * from a button next to the gate. Runs on the host in the project dir like a deploy, with no time
+   * limit; its output streams into the deploy history. Gets `$KILN_ENV` and `$KILN_CANDIDATE`.
+   */
+  step?: string;
+  stepLabel?: string;
+  /** The deploy may go ahead with this gate failing, after you give a reason (kept in the history). */
+  skippable?: boolean;
 }
 
 export interface ProjectEnvs {

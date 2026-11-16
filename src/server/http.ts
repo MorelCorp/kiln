@@ -4,7 +4,7 @@ import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { KILN_ROOT, loadRules } from "../config.ts";
 import type { BusEvent, Factory } from "../factory/factory.ts";
-import { probeEnvs, deploy, cachedEnvs } from "../factory/envs.ts";
+import { probeEnvs, deploy, cachedEnvs, runGateStep } from "../factory/envs.ts";
 import { worktreePath } from "../factory/gate.ts";
 import { git, type CloseReason } from "../tasks/source.ts";
 import * as assist from "../factory/assist.ts";
@@ -201,7 +201,13 @@ route("GET", "/api/p/:pid/envs", async ({ f, params, query }) => {
   return { ...view, deploys: f.ledger.listDeploys(p.id) };
 });
 route("POST", "/api/p/:pid/envs/:env/deploy", async ({ f, params, body }) => ({
-  id: await deploy(f, f.project(params.pid), params.env, body?.choice),
+  id: await deploy(
+    f, f.project(params.pid), params.env, body?.choice,
+    Array.isArray(body?.skip) ? body.skip.map(String) : [], String(body?.reason ?? ""),
+  ),
+}));
+route("POST", "/api/p/:pid/envs/:env/gates/step", async ({ f, params, body }) => ({
+  id: await runGateStep(f, f.project(params.pid), params.env, String(body?.gate ?? "")),
 }));
 route("GET", "/api/p/:pid/deploys/:id/log", ({ f, params }) => {
   const d = f.ledger.listDeploys(params.pid, 100).find((x) => x.id === num(params.id));
