@@ -51,6 +51,11 @@ export function EnvsPage() {
     setBusy(null);
     reload();
   };
+  const stopStep = async (id: number, gate: string) => {
+    if (!confirm(`Stop "${gate}"? Whatever it was doing is cut short.`)) return;
+    await act(() => post(`/api/p/${pid}/deploys/${id}/stop`, {}), "Stopping…");
+    reload();
+  };
   const showLog = async (id: number) => {
     if (open === id) return setOpen(null);
     const r = await act(() => api<{ log: string }>(`/api/p/${pid}/deploys/${id}/log`));
@@ -121,12 +126,14 @@ export function EnvsPage() {
                       <span title={g.output} style={{ flex: "1 1 160px", color: g.ok ? "var(--sky)" : skips[k] ? "var(--gold)" : "var(--redsoft)" }}>
                         {g.ok ? "✓" : skips[k] ? "↷" : "✗"} {g.name}
                       </span>
-                      {g.step && (
-                        <Pill tone="lilac" sm busy={busy === k || g.running !== null} disabled={g.running !== null}
-                          title={g.running !== null ? "Running: see its log in the history" : undefined}
-                          onClick={() => runStep(e.id, g.name, g.step!)}>
-                          {g.running !== null ? `${g.step} · running` : g.step}
-                        </Pill>
+                      {g.step && g.running === null && (
+                        <Pill tone="lilac" sm busy={busy === k} onClick={() => runStep(e.id, g.name, g.step!)}>{g.step}</Pill>
+                      )}
+                      {g.running !== null && (
+                        <>
+                          <button className="lbl" onClick={() => showLog(g.running!)} style={{ background: "none", border: 0, color: "var(--gold)", cursor: "pointer" }}>running · log</button>
+                          <Pill tone="salmon" sm onClick={() => stopStep(g.running!, g.name)}>Stop</Pill>
+                        </>
                       )}
                       {!g.ok && g.skippable && (
                         <label className="lbl" style={{ display: "flex", gap: 6, alignItems: "center", color: "var(--muted)", cursor: "pointer" }}>
@@ -174,7 +181,7 @@ export function EnvsPage() {
                   {d.kind === "step" ? `${d.env} · ${d.gate}` : `${d.env} ‹ ${d.version ?? "?"}`}
                   {d.skipped && <span title={d.skipped.reason} style={{ color: "var(--gold)", textTransform: "none" }}> · skipped {d.skipped.gates.join(", ")}</span>}
                 </span>
-                <span style={{ color: d.status === "failed" || d.status === "restarted" ? "var(--red)" : d.status === "running" ? "var(--gold)" : "var(--sky)" }}>{d.status}</span>
+                <span style={{ color: d.status === "failed" || d.status === "restarted" ? "var(--red)" : d.status === "running" ? "var(--gold)" : d.status === "stopped" ? "var(--muted)" : "var(--sky)" }}>{d.status}</span>
                 <span className="lbl" style={{ marginLeft: "auto", color: "var(--muted)" }}>{open === d.id ? "hide log" : "log"}</span>
               </button>
               {open === d.id && <pre className="log thin-scroll">{logs[d.id] || "…"}</pre>}

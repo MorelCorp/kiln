@@ -147,7 +147,8 @@ export interface DeployRow {
   /** Gates this deploy went ahead without, and why. */
   skipped?: { gates: string[]; reason: string };
   /** "restarted": Kiln stopped while it ran (a deploy of Kiln itself restarts Kiln). */
-  status: "running" | "done" | "failed" | "restarted";
+  /** "stopped": a gate step stopped from Kiln. */
+  status: "running" | "done" | "failed" | "restarted" | "stopped";
   startedAt: string;
   endedAt: string | null;
   logPath: string;
