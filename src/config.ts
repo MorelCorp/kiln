@@ -199,6 +199,8 @@ export interface ProjectRules {
   sandbox: {
     mounts: { path: string; readonly?: boolean }[];
     env: Record<string, string>;
+    /** A working Go environment: a shared, writable module and build cache, wired through GOPATH, GOMODCACHE and GOCACHE. */
+    go: boolean;
   };
 }
 
@@ -266,6 +268,7 @@ export function loadRules(p: ProjectConfig): ProjectRules {
     sandbox: {
       mounts: (r.sandbox?.mounts ?? []).map((m) => ({ ...m, path: expandHome(m.path) })),
       env: Object.fromEntries(Object.entries(r.sandbox?.env ?? {}).map(([k, v]) => [k, expandHome(String(v))])),
+      go: r.sandbox?.go === true,
     },
   };
 }

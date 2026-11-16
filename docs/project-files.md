@@ -47,14 +47,17 @@ idleTimeoutSeconds: 900
 # check names and links. A poll, so it holds no agent slot and uses no usage. Default 1200 (20 minutes).
 ciTimeoutSeconds: 1200
 
-# Optional. The sandbox has a private home, so package caches start empty on every run. Give it
-# read-only access to a host cache, and tell the tools where it is. `~` and $HOME are expanded.
+# Optional. The sandbox has a private home, so package caches start empty on every run.
 sandbox:
+  # A working Go environment: a module and build cache shared by all runs and kept under Kiln's state
+  # dir (GOPATH, GOMODCACHE, GOCACHE), and GOTOOLCHAIN=local. `go` must be on Kiln's PATH.
+  go: true
+  # Anything else the sandbox may see: host paths (read-only unless `readonly: false`) and env vars.
+  # `~` and $HOME are expanded. These win over the Go defaults above.
   mounts:
-    - path: ~/go/pkg/mod/cache/download   # read-only unless `readonly: false`
+    - path: ~/some/cache
   env:
-    # The host's module cache as a read-only proxy: fast, and agents cannot write to it.
-    GOPROXY: "file://$HOME/go/pkg/mod/cache/download,https://proxy.golang.org,direct"
+    SOME_VAR: value
 ```
 
 Checks run inside the same bubblewrap sandbox as agents, with the host's toolchain. They should not need

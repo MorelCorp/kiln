@@ -2,7 +2,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createSandbox } from "@ai-hero/sandcastle";
 import { bwrap } from "@ai-hero/sandcastle/sandboxes/bwrap";
-import { loadRules, type ProjectConfig } from "../config.ts";
+import { KILN_STATE, loadRules, type ProjectConfig, type ProjectRules } from "../config.ts";
 import type { GateState, TaskRow } from "../state/db.ts";
 import { git, type IssueDetail, type PullRequest } from "../tasks/source.ts";
 import { ciSummary, waitForCi } from "./ci.ts";
@@ -44,18 +44,49 @@ export async function reauthorCommits(wt: string, base: string, email: string): 
   return true;
 }
 
+/** Go's caches are safe for concurrent use, so every agent and gate check shares this one. */
+export const GO_CACHE_DIR = join(KILN_STATE, "go");
+
+/** Mounts and env for `sandbox.go`: a writable cache dir and the variables that point Go at it. */
+export function goSandbox(dir = GO_CACHE_DIR) {
+  return {
+    mounts: [{ path: dir, readonly: false }],
+    env: {
+      GOPATH: dir,
+      GOMODCACHE: join(dir, "mod"),
+      GOCACHE: join(dir, "build"),
+      // The toolchain dir is read-only inside the sandbox: never try to download another one.
+      GOTOOLCHAIN: "local",
+    } as Record<string, string>,
+  };
+}
+
+/** The project's own mounts and env, plus the Go environment when it asks for one (its own values win). */
+export function projectSandbox(sandbox: ProjectRules["sandbox"], goDir = GO_CACHE_DIR) {
+  const go = sandbox.go ? goSandbox(goDir) : { mounts: [], env: {} };
+  if (sandbox.go) mkdirSync(goDir, { recursive: true });
+  return {
+    mounts: [...go.mounts, ...sandbox.mounts],
+    env: { ...go.env, ...sandbox.env },
+  };
+}
+
 /**
  * The bubblewrap sandbox for a project: the provider's session store plus whatever the project's
- * rules.yaml adds (a read-only package cache, env vars).
+ * rules.yaml adds (a Go environment, a read-only package cache, env vars).
  */
 export function sandboxFor(f: Factory, p: ProjectConfig) {
   const { sandbox } = loadRules(p);
+  const extra = projectSandbox(sandbox);
+  if (sandbox.go && !process.env.PATH?.split(":").some((d) => d && existsSync(join(d, "go")))) {
+    console.warn(`[kiln] ${p.id}: sandbox.go is set but \`go\` is not on Kiln's PATH; the sandbox will not have it`);
+  }
   return bwrap({
     mounts: [
       ...f.provider(p).sandboxMounts(),
-      ...sandbox.mounts.map((m) => ({ hostPath: m.path, sandboxPath: m.path, readonly: m.readonly ?? true })),
+      ...extra.mounts.map((m) => ({ hostPath: m.path, sandboxPath: m.path, readonly: m.readonly ?? true })),
     ],
-    env: sandbox.env,
+    env: extra.env,
   });
 }
 
