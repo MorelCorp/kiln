@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ago, api, post, useApi, useBus, type EnvsView } from "../api.ts";
-import { Empty, Loading, Pill, useApp } from "../ui.tsx";
+import { Empty, LiveLog, Loading, Pill, useApp } from "../ui.tsx";
 
 const ENV_COLORS = ["var(--peach)", "var(--salmon)", "var(--lilac)", "var(--gold)"];
 
@@ -184,7 +184,7 @@ export function EnvsPage() {
                 <span style={{ color: d.status === "failed" || d.status === "restarted" ? "var(--red)" : d.status === "running" ? "var(--gold)" : d.status === "stopped" ? "var(--muted)" : "var(--sky)" }}>{d.status}</span>
                 <span className="lbl" style={{ marginLeft: "auto", color: "var(--muted)" }}>{open === d.id ? "hide log" : "log"}</span>
               </button>
-              {open === d.id && <pre className="log thin-scroll">{logs[d.id] || "…"}</pre>}
+              {open === d.id && <LiveLog text={logs[d.id] || "…"} />}
             </div>
           ))}
         </section>

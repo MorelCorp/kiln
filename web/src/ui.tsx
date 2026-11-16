@@ -1,4 +1,4 @@
-import { Component, createContext, useContext, useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { Component, createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { AppState, Effort, Tier, Tone } from "./api.ts";
 import { EFFORTS, EFFORT_LABEL, TIERS, TIER_LABEL } from "./api.ts";
 
@@ -137,6 +137,21 @@ export function EffortSeg({ value, dflt, onChange, hot }: { value: Effort | null
         </button>
       ))}
     </div>
+  );
+}
+
+/** A log that follows new lines while scrolled to the bottom; scrolling up stops following until you scroll back down. */
+export function LiveLog({ text }: { text: string }) {
+  const ref = useRef<HTMLPreElement>(null);
+  const follow = useRef(true);
+  useLayoutEffect(() => {
+    if (follow.current && ref.current) ref.current.scrollTop = ref.current.scrollHeight;
+  }, [text]);
+  return (
+    <pre ref={ref} className="log thin-scroll" onScroll={(e) => {
+      const el = e.currentTarget;
+      follow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 4;
+    }}>{text}</pre>
   );
 }
 
