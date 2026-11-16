@@ -140,6 +140,12 @@ export interface DeployRow {
   project: string;
   env: string;
   version: string | null;
+  /** "step": a gate's step, not a deploy. Absent on rows written before steps existed. */
+  kind?: "deploy" | "step";
+  /** The gate a step ran for. */
+  gate?: string;
+  /** Gates this deploy went ahead without, and why. */
+  skipped?: { gates: string[]; reason: string };
   /** "restarted": Kiln stopped while it ran (a deploy of Kiln itself restarts Kiln). */
   status: "running" | "done" | "failed" | "restarted";
   startedAt: string;

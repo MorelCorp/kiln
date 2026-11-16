@@ -40,7 +40,9 @@ Work always goes through a `kiln/issue-<n>` branch and a PR. Nothing is committe
   a version ConfigMap with `kubectl`, or a `/version` endpoint).
 - **Deploy staging** and **Promote prod** are buttons that run the project's own scripts.
   Promote prod can require a release gate (e.g. a security-scan GO report for the candidate),
-  configured per project. Never automatic. A deploy can offer a few options picked next to its
+  configured per project. A gate can have a step that produces what it checks (a scan, an agent
+  run), started from a button next to it, and can be marked skippable: you then promote past it
+  with a reason that stays in the deploy history. Never automatic. A deploy can offer a few options picked next to its
   button (e.g. a patch / minor / major version bump), passed to the script as an env var.
 
 ## You in the loop: the "Needs you" inbox

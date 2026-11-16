@@ -230,14 +230,17 @@ export interface EnvView {
   canDeploy: boolean;
   deployChoices: string[];
   candidate: string | null;
-  gates: { name: string; ok: boolean; output: string }[];
+  gates: { name: string; ok: boolean; output: string; step: string | null; skippable: boolean; running: number | null }[];
 }
 
 export interface Deploy {
   id: number;
   env: string;
   version: string | null;
-  status: "running" | "done" | "failed";
+  kind?: "deploy" | "step";
+  gate?: string;
+  skipped?: { gates: string[]; reason: string };
+  status: "running" | "done" | "failed" | "restarted";
   startedAt: string;
   endedAt: string | null;
 }

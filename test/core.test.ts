@@ -264,7 +264,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join as joinPath } from "node:path";
 import { execFileSync } from "node:child_process";
-import { deployChoice, localMergeCommit, mainSubjects } from "../src/factory/envs.ts";
+import { blockingGates, deployChoice, localMergeCommit, mainSubjects } from "../src/factory/envs.ts";
 
 test("localMergeCommit finds a squash commit on main after its history was rewritten", async () => {
   const dir = mkdtempSync(joinPath(tmpdir(), "kiln-rewrite-"));
@@ -355,4 +355,19 @@ test("claude provider caps the auto-compact window at contextWindow", () => {
   const set = new ClaudeCodeProvider({ ...base, contextWindow: 150000 });
   assert.equal(set["env"]().CLAUDE_CODE_AUTO_COMPACT_WINDOW, "150000");
   assert.equal(new ClaudeCodeProvider({ ...base, contextWindow: 0 }).contextWindow(), DEFAULT_CONTEXT_WINDOW);
+});
+
+test("blockingGates: a failing gate blocks unless it is skippable, skipped and given a reason", () => {
+  const defs = [
+    { name: "scan says GO", run: "true", step: "./scan.sh", skippable: true },
+    { name: "staging healthy", run: "true" },
+  ];
+  const results = [{ name: "scan says GO", ok: false }, { name: "staging healthy", ok: true }];
+  assert.deepEqual(blockingGates(defs, results), { blocking: ["scan says GO"], skipped: [] });
+  assert.deepEqual(blockingGates(defs, results, ["scan says GO"], "docs-only release"), { blocking: [], skipped: ["scan says GO"] });
+  assert.throws(() => blockingGates(defs, results, ["scan says GO"], "  "), /why/);
+  assert.throws(() => blockingGates(defs, results, ["staging healthy"], "x"), /cannot be skipped/);
+  assert.throws(() => blockingGates(defs, results, ["nope"], "x"), /Unknown gate/);
+  // Skipping a gate that passes is a no-op and needs no reason.
+  assert.deepEqual(blockingGates(defs, [{ name: "scan says GO", ok: true }], ["scan says GO"]), { blocking: [], skipped: [] });
 });

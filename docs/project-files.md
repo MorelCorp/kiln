@@ -86,10 +86,19 @@ envs:
     deploy: ./scripts/promote-prod.sh
     deployLabel: Promote prod
     candidate: curl -fsS https://staging.example.com/version
-    # Every command must exit 0 before the deploy button unlocks.
+    # Every check must exit 0 (or be skipped) before the deploy button unlocks.
     gate:
       - name: security report says GO
+        # The check: runs on every probe, so keep it fast (60 s cap).
         run: test -f "docs/security/releases/$(curl -fsS https://staging.example.com/version)-GO.md"
+        # Optional: the step that produces what the check looks for, run from a button next to the
+        # gate. Same rules as a deploy (host, your credentials, output in the history), no time limit.
+        # It gets $KILN_ENV and $KILN_CANDIDATE. It can be an agent run, e.g. claude -p "/security-scan".
+        step: ./scripts/security-scan.sh --release
+        stepLabel: Run scan
+        # Optional: the deploy may go ahead with this gate failing. You tick "skip" and give a reason;
+        # both are kept in the deploy history.
+        skippable: true
 ```
 
 Order matters: the first environment is "staging" for the board and the header, the one with id `prod`
