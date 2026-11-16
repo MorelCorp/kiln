@@ -49,6 +49,8 @@ export interface EnvsView {
 const cache = new Map<string, { at: number; view: EnvsView }>();
 /** `project/env/gate` -> history row of the step running now. */
 const running = new Map<string, number>();
+/** History row -> the process group of a running step, and whether you stopped it. */
+const steps = new Map<number, { pgid: number; stopped: boolean }>();
 
 async function run(cmd: string, cwd: string, timeout = 30_000): Promise<string> {
   const { stdout } = await sh(cmd, { cwd, timeout, maxBuffer: 4 * 1024 * 1024, shell: "/bin/bash" });
@@ -217,6 +219,8 @@ export function blockingGates(
 function launch(
   f: Factory, p: ProjectConfig, cmd: string, row: Omit<DeployRow, "id" | "status" | "startedAt" | "endedAt" | "logPath">,
   env: Record<string, string>, preamble: string, done: (code: number | null) => void,
+  /** Own process group, so the whole tree (e.g. an agent and its tools) can be stopped together. */
+  group = false,
 ): DeployRow {
   const logPath = join(RUNS_DIR, `${row.kind ?? "deploy"}-${p.id}-${row.env}-${Date.now()}.log`);
   const r = f.ledger.addDeploy({ ...row, status: "running", startedAt: new Date().toISOString(), endedAt: null, logPath });
@@ -227,21 +231,26 @@ function launch(
     f.emit({ type: "deploy", project: p.id, data: { id: r.id, line: text } });
   };
   if (preamble) onData(preamble);
-  const child = spawn("/bin/bash", ["-lc", cmd], { cwd: p.path, env: { ...process.env, ...env } });
+  const child = spawn("/bin/bash", ["-lc", cmd], { cwd: p.path, env: { ...process.env, ...env }, detached: group });
+  if (group && child.pid) steps.set(r.id, { pgid: child.pid, stopped: false });
   child.stdout.on("data", onData);
   child.stderr.on("data", onData);
   child.on("error", (e) => onData(`\n${e.message}\n`));
   child.on("close", (code) => {
     done(code);
+    const stopped = steps.get(r.id)?.stopped ?? false;
+    steps.delete(r.id);
     // A deploy of Kiln itself restarts Kiln: the service stop signals the whole cgroup, this child
     // included, while the daemon is still shutting down. That is not a failure: leave the row
     // "running" and let the next daemon settle it (markOrphanDeploys).
     if (code === null && f.stopping) return;
-    const end = { ...r, status: code === 0 ? ("done" as const) : ("failed" as const), endedAt: new Date().toISOString() };
+    if (stopped) onData("\nStopped from Kiln.\n");
+    const status = stopped ? ("stopped" as const) : code === 0 ? ("done" as const) : ("failed" as const);
+    const end = { ...r, status, endedAt: new Date().toISOString() };
     f.ledger.putDeploy(end);
     f.emit({ type: "deploy", project: p.id, data: { deploy: end } });
     const what = row.kind === "step" ? `${row.env} · ${row.gate}` : `Deploy ${row.env}`;
-    f.toast(`${what}: ${code === 0 ? "done" : `failed (exit ${code})`}`, code === 0 ? "info" : "error", p.id);
+    f.toast(`${what}: ${stopped ? "stopped" : code === 0 ? "done" : `failed (exit ${code})`}`, code === 0 || stopped ? "info" : "error", p.id);
     probeEnvs(f, p, true).catch(() => undefined);
   });
   return r;
@@ -286,8 +295,25 @@ export async function runGateStep(f: Factory, p: ProjectConfig, envId: string, g
   const candidate = cachedEnvs(p)?.envs.find((e) => e.id === envId)?.candidate ?? "";
   const r = launch(
     f, p, g.step, { project: p.id, env: envId, kind: "step", gate: gateName, version: candidate || null },
-    { KILN_ENV: envId, KILN_CANDIDATE: candidate }, "", () => running.delete(key),
+    { KILN_ENV: envId, KILN_CANDIDATE: candidate }, "", () => running.delete(key), true,
   );
   running.set(key, r.id);
   return r.id;
+}
+
+/** Stops a running gate step: SIGTERM to its whole process group, SIGKILL if it is still there after 10 s. */
+export function stopGateStep(f: Factory, p: ProjectConfig, id: number): void {
+  const s = steps.get(id);
+  if (!s) throw new Error("That step is not running");
+  s.stopped = true;
+  const kill = (sig: NodeJS.Signals) => {
+    try {
+      process.kill(-s.pgid, sig);
+    } catch {
+      /* already gone */
+    }
+  };
+  kill("SIGTERM");
+  setTimeout(() => steps.has(id) && kill("SIGKILL"), 10_000).unref();
+  f.emit({ type: "deploy", project: p.id, data: { id, line: "\nStopping…\n" } });
 }

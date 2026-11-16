@@ -4,7 +4,7 @@ import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { KILN_ROOT, loadRules } from "../config.ts";
 import type { BusEvent, Factory } from "../factory/factory.ts";
-import { probeEnvs, deploy, cachedEnvs, runGateStep } from "../factory/envs.ts";
+import { probeEnvs, deploy, cachedEnvs, runGateStep, stopGateStep } from "../factory/envs.ts";
 import { worktreePath } from "../factory/gate.ts";
 import { git, type CloseReason } from "../tasks/source.ts";
 import * as assist from "../factory/assist.ts";
@@ -209,6 +209,7 @@ route("POST", "/api/p/:pid/envs/:env/deploy", async ({ f, params, body }) => ({
 route("POST", "/api/p/:pid/envs/:env/gates/step", async ({ f, params, body }) => ({
   id: await runGateStep(f, f.project(params.pid), params.env, String(body?.gate ?? "")),
 }));
+route("POST", "/api/p/:pid/deploys/:id/stop", ({ f, params }) => (stopGateStep(f, f.project(params.pid), num(params.id)), { ok: true }));
 route("GET", "/api/p/:pid/deploys/:id/log", ({ f, params }) => {
   const d = f.ledger.listDeploys(params.pid, 100).find((x) => x.id === num(params.id));
   if (!d) throw new HttpError(404, "No deploy");

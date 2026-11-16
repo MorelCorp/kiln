@@ -240,7 +240,7 @@ export interface Deploy {
   kind?: "deploy" | "step";
   gate?: string;
   skipped?: { gates: string[]; reason: string };
-  status: "running" | "done" | "failed" | "restarted";
+  status: "running" | "done" | "failed" | "restarted" | "stopped";
   startedAt: string;
   endedAt: string | null;
 }

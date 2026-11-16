@@ -92,7 +92,8 @@ envs:
         # The check: runs on every probe, so keep it fast (60 s cap).
         run: test -f "docs/security/releases/$(curl -fsS https://staging.example.com/version)-GO.md"
         # Optional: the step that produces what the check looks for, run from a button next to the
-        # gate. Same rules as a deploy (host, your credentials, output in the history), no time limit.
+        # gate. Same rules as a deploy (host, your credentials, output in the history), no time limit;
+        # a Stop button ends it (its whole process tree).
         # It gets $KILN_ENV and $KILN_CANDIDATE. It can be an agent run, e.g. claude -p "/security-scan".
         step: ./scripts/security-scan.sh --release
         stepLabel: Run scan
