@@ -143,6 +143,9 @@ export class GitHubSource implements Source {
   async editLabels(n: number, add: string[], remove: string[]) {
     if (!add.length && !remove.length) return;
     if (add.length) await this.ensureLabels(add);
+    // gh fails the whole edit when asked to remove a label the repo doesn't have, so drop those.
+    if (remove.length) remove = await this.existingLabels(remove);
+    if (!add.length && !remove.length) return;
     const args = ["issue", "edit", String(n), "-R", this.p.repo];
     for (const l of add) args.push("--add-label", l);
     for (const l of remove) args.push("--remove-label", l);
@@ -150,17 +153,27 @@ export class GitHubSource implements Source {
   }
 
   private knownLabels?: Set<string>;
+  private async loadLabels() {
+    const out = await this.gh(["label", "list", "-R", this.p.repo, "--json", "name", "--limit", "500"]);
+    this.knownLabels = new Set((JSON.parse(out) as { name: string }[]).map((l) => l.name));
+    return this.knownLabels;
+  }
+
+  /** The subset of `labels` that exist in the repo; reloads once if some look missing (cache may be stale). */
+  private async existingLabels(labels: string[]) {
+    let known = this.knownLabels ?? (await this.loadLabels());
+    if (labels.some((l) => !known.has(l))) known = await this.loadLabels();
+    return labels.filter((l) => known.has(l));
+  }
+
   private async ensureLabels(labels: string[]) {
-    if (!this.knownLabels) {
-      const out = await this.gh(["label", "list", "-R", this.p.repo, "--json", "name", "--limit", "500"]);
-      this.knownLabels = new Set((JSON.parse(out) as { name: string }[]).map((l) => l.name));
-    }
+    if (!this.knownLabels) await this.loadLabels();
     for (const l of labels) {
-      if (this.knownLabels.has(l)) continue;
+      if (this.knownLabels!.has(l)) continue;
       await this.gh(["label", "create", l, "-R", this.p.repo, "--color", "FF9C33", "--description", "Managed by Kiln"]).catch(
         () => undefined,
       );
-      this.knownLabels.add(l);
+      this.knownLabels!.add(l);
     }
   }
 
