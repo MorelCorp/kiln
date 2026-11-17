@@ -63,6 +63,10 @@ Never test against a real project's GitHub without asking.
 
 GitHub Issues on `MorelCorp/kiln`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
 
+### Triage labels
+
+Default canonical vocabulary: `needs-triage` / `needs-info` / `ready-for-agent` / `ready-for-human` / `wontfix`, as GitHub labels (`ready-for-agent` is what Kiln picks up). See `docs/agents/triage-labels.md`.
+
 ### Domain docs
 
 Single-context: `GLOSSARY.md` + `docs/adr/` at the repo root (created lazily). See `docs/agents/domain.md`.
