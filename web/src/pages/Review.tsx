@@ -2,6 +2,7 @@ import { useState } from "react";
 import { post, useApi, type TaskDetail } from "../api.ts";
 import { Empty, Loading, Md, PageTitle, Pill, Sec, Tag, go, useApp } from "../ui.tsx";
 import { GateBox } from "./Task.tsx";
+import { DiffView } from "./DiffView.tsx";
 
 type Tab = "plan" | "diff" | "gates" | "issue";
 
@@ -103,18 +104,5 @@ export function ReviewPage({ number, tab }: { number: number; tab?: string }) {
         </section>
       )}
     </>
-  );
-}
-
-function DiffView({ text }: { text: string }) {
-  const lines = text.split("\n").slice(0, 6000);
-  return (
-    <div className="diff thin-scroll">
-      {lines.map((l, i) => (
-        <div key={i} className={l.startsWith("diff --git") ? "f" : l.startsWith("@@") ? "h" : l.startsWith("+") && !l.startsWith("+++") ? "a" : l.startsWith("-") && !l.startsWith("---") ? "d" : undefined}>
-          {l || " "}
-        </div>
-      ))}
-    </div>
   );
 }
