@@ -11,7 +11,7 @@ Each milestone should be usable on its own.
       reviewer agent (fresh session) with approve / revise / escalate. Plan-then-approve for risky tasks.
       Daemon loop with pace and usage headroom; SQLite ledger (`node:sqlite`); HTTP + SSE API on 127.0.0.1.
 - [x] **M3: Command center.** React + Vite + Tailwind. Board + Agents at work, Runs (live activity, stop,
-      redirect, per-task model/effort override), Needs you, Review (plan / diff / gates / issue), Pace and
+      redirect, per-task model/effort override), Needs you, Review (plan / diff browser with file list, unified or split view / gates / issue), Pace and
       Chat popups.
 - [x] **M4: Humans in the loop.** Agent questions (pause, answer resumes the session), test checklists
       (a failure starts a fix run on a fresh branch), triage agent drafts, New task quick capture
